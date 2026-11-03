@@ -1,0 +1,63 @@
+"use server";
+import bcrypt from "bcryptjs";
+import { randomBytes } from "node:crypto";
+import { revalidatePath } from "next/cache";
+import { requireAdmin } from "@/lib/auth";
+import { assignStudy } from "@/lib/assign";
+import { db } from "@/lib/db";
+
+const ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no 0/O, 1/I
+
+function newCode(n = 10): string {
+  const b = randomBytes(n);
+  return Array.from(b, (x) => ALPHABET[x % ALPHABET.length]).join("");
+}
+
+export type CreateRaterResult = { username: string; code: string; assigned: number } | { error: string } | null;
+
+export async function createRater(_: CreateRaterResult, form: FormData): Promise<CreateRaterResult> {
+  await requireAdmin();
+  const username = String(form.get("username") ?? "").trim();
+  const note = String(form.get("note") ?? "").trim();
+  if (!/^[A-Za-z0-9._-]{2,40}$/.test(username)) return { error: "Use 2 to 40 letters, digits, dots, dashes or underscores." };
+  if (await db.rater.findUnique({ where: { username } })) return { error: "That name is taken." };
+  const code = newCode();
+  const rater = await db.rater.create({ data: { username, note: note || null, codeHash: await bcrypt.hash(code, 10) } });
+  let assigned = 0;
+  for (const st of await db.study.findMany({ where: { active: true } })) assigned += await assignStudy(rater.id, st.id);
+  revalidatePath("/admin");
+  return { username, code, assigned };
+}
+
+export async function resetCode(_: CreateRaterResult, form: FormData): Promise<CreateRaterResult> {
+  await requireAdmin();
+  const id = String(form.get("raterId") ?? "");
+  const r = await db.rater.findUnique({ where: { id } });
+  if (!r) return { error: "Unknown rater." };
+  const code = newCode();
+  await db.rater.update({ where: { id }, data: { codeHash: await bcrypt.hash(code, 10) } });
+  return { username: r.username, code, assigned: 0 };
+}
+
+export async function toggleRater(form: FormData): Promise<void> {
+  await requireAdmin();
+  const id = String(form.get("raterId") ?? "");
+  const r = await db.rater.findUnique({ where: { id } });
+  if (r) await db.rater.update({ where: { id }, data: { active: !r.active } });
+  revalidatePath("/admin");
+}
+
+export async function assignActiveStudies(form: FormData): Promise<void> {
+  await requireAdmin();
+  const id = String(form.get("raterId") ?? "");
+  for (const st of await db.study.findMany({ where: { active: true } })) await assignStudy(id, st.id);
+  revalidatePath("/admin");
+}
+
+export async function toggleStudy(form: FormData): Promise<void> {
+  await requireAdmin();
+  const id = String(form.get("studyId") ?? "");
+  const st = await db.study.findUnique({ where: { id } });
+  if (st) await db.study.update({ where: { id }, data: { active: !st.active } });
+  revalidatePath("/admin");
+}

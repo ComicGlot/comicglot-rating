@@ -1,0 +1,91 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// A rater account. The admin is defined by environment variables, not here.
+model Rater {
+  id          String       @id @default(cuid())
+  username    String       @unique
+  codeHash    String
+  active      Boolean      @default(true)
+  note        String?
+  createdAt   DateTime     @default(now())
+  assignments Assignment[]
+}
+
+// One round of the study (for example a pilot and the main round).
+model Study {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  active    Boolean  @default(true)
+  // Per-rater flow: write an own translation first (optional), then compare.
+  askOwnTranslation Boolean @default(true)
+  createdAt DateTime @default(now())
+  items     Item[]
+}
+
+// One text block shown to raters.
+model Item {
+  id          String       @id @default(cuid())
+  studyId     String
+  study       Study        @relation(fields: [studyId], references: [id], onDelete: Cascade)
+  externalId  String       // block uid from the pipeline
+  className   String?      // hidden from raters; used in the export
+  sourceText  String       // Korean
+  context     String[]     // preceding lines of the scene
+  imageMime   String?
+  imageData   Bytes?       // crop with the block marked; served only to signed-in users
+  candidates  Candidate[]
+  assignments Assignment[]
+
+  @@unique([studyId, externalId])
+}
+
+// One translation of an item under one condition (for example "guide" or "no_type").
+model Candidate {
+  id        String   @id @default(cuid())
+  itemId    String
+  item      Item     @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  condition String
+  model     String?
+  text      String
+  createdAt DateTime @default(now())
+
+  @@unique([itemId, condition])
+}
+
+// Which rater sees which item, in which order, with which letters.
+model Assignment {
+  id        String     @id @default(cuid())
+  raterId   String
+  rater     Rater      @relation(fields: [raterId], references: [id], onDelete: Cascade)
+  itemId    String
+  item      Item       @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  position  Int
+  // letter -> candidate id, shuffled per rater; never sent to the browser with conditions
+  letters   Json
+  judgement Judgement?
+  createdAt DateTime   @default(now())
+
+  @@unique([raterId, itemId])
+  @@index([raterId, position])
+}
+
+model Judgement {
+  id             String     @id @default(cuid())
+  assignmentId   String     @unique
+  assignment     Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  ownTranslation String?
+  choice         String     // a letter, or "tie"
+  // letter -> "fine" | "added" | "overdone"
+  tone           Json
+  comment        String?
+  msSpent        Int?
+  createdAt      DateTime   @default(now())
+}

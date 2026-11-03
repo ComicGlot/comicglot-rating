@@ -1,0 +1,12 @@
+node_modules/
+.next/
+out/
+.env
+.env*.local
+*.tsbuildinfo
+next-env.d.ts
+# study material: page crops and rater keys never go into git
+data/
+*.xlsx
+key.json
+.vercel
