@@ -87,7 +87,11 @@ def main() -> None:
     groups = []  # (chapter id, title, [frame keys])
     for run_file in a.runs:
         run = run_file.parent.name
-        data = json.loads(run_file.read_text(encoding="utf-8"))
+        try:
+            data = json.loads(run_file.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as e:
+            print(f"skipped {run_file}: {e}")
+            continue
         keys = []
         for k, frame in enumerate(data.get("frames", [])):
             if lo <= k <= hi and (frame.get("blocks") or not (a.skip_empty or a.per_type)):
