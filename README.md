@@ -1,6 +1,6 @@
 # ComicGlot rating (private)
 
-Web app for the studies of the ComicGlot paper. Each rater signs in with a name and an access code and works through assigned chapters in order, page by page. On every page the steps come in a fixed order:
+Web app for the studies of the ComicGlot paper. Each rater signs in with a name and an access code and works through assigned chapters in order, page by page. A chapter is either a real chapter or a set of single frames sampled across series (see Load chapters). On every page the steps come in a fixed order:
 
 | Step | What the rater does | What it measures (paper) |
 | --- | --- | --- |
@@ -35,12 +35,14 @@ python -m eval.translation_study.run_conditions --runs RUN.json ... --sample sam
 python tools/export_chapters.py --project-root ../ComicGlot \
     --runs ../ComicGlot/data/output/RUN/chapter_full_results.json ... \
     --calls ../ComicGlot/study_round1/calls.jsonl --readings ocr_systems.csv \
-    --study round1 --frames 0-29 --skip-empty --out data/round1
+    --study round1 --per-type 40 --set-size 20 --out data/round1
 
 # 3. Into the database named in .env
 npm run import -- data/round1/chapters.json
 ```
 
+- `--per-type 40` draws single frames, rarest type first, until every type has at least 40 blocks, and groups them into shuffled sets of 20 frames from many series; the app shows each set like a chapter. Pass only runs of chapters the detector was not trained on. Without it, every run becomes one chapter.
+- The transcription export has `block_uid` and `gt_text` columns (`#ILLEGIBLE` for unreadable blocks), so it is the `--gt` file of `ComicGlot/eval/ocr_eval.py` as it is.
 - `--readings` takes CSV files with a `block_uid` column and one column per OCR system; they appear as `reading:<name>` columns in the transcription export next to the rater's text.
 - Importing a chapter again adds new candidates and readings and changes nothing else; candidates raters may have seen are never replaced.
 - New raters get every chapter of the open studies; "Assign new chapters" gives existing raters chapters imported later.

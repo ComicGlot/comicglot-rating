@@ -38,7 +38,7 @@ export async function GET(req: Request) {
       },
     });
     const id = (r: (typeof rows)[number]) => [r.block.page.chapter.study.name, r.block.page.chapter.externalId, r.block.page.index, r.block.externalId, r.block.order, r.rater.username];
-    const idHead = ["study", "chapter", "page", "block", "order", "rater"];
+    const idHead = ["study", "chapter", "page", "block_uid", "order", "rater"];
     if (kind === "types") {
       body = table([...idHead, "detector_type", "rater_type", "agree", "note"], rows.map((r) => {
         const d = r.data as { type?: string; note?: string };
@@ -50,7 +50,8 @@ export async function GET(req: Request) {
       body = table([...idHead, "detector_type", "gt_text", "unreadable", "pipeline_text", ...keys.map((k) => `reading:${k}`)], rows.map((r) => {
         const d = r.data as { text?: string; unreadable?: boolean };
         const rd = (r.block.readings ?? {}) as Record<string, unknown>;
-        return [...id(r), r.block.className, d.text, !!d.unreadable, r.block.sourceText, ...keys.map((k) => rd[k])];
+        // gt_text follows eval/ocr_eval.py: "#ILLEGIBLE" for blocks the rater could not read.
+        return [...id(r), r.block.className, d.unreadable ? "#ILLEGIBLE" : d.text, !!d.unreadable, r.block.sourceText, ...keys.map((k) => rd[k])];
       }));
     } else {
       // One row per comparison set; letters are mapped back to conditions.

@@ -7,6 +7,11 @@ Run it from the ComicGlot code repository's environment (it needs Pillow only):
         --calls study_round1/calls.jsonl --conditions true_class no_class \
         --readings ocr_systems.csv --study round1 --out data/round1
 
+With --per-type N it samples frames instead of whole chapters: frames are drawn at random, rarest
+type first, until every type has at least N blocks, then shuffled across series and grouped into sets
+of --set-size frames, which the app shows like chapters. Pass only runs of chapters the detector was
+not trained on. Without --per-type, every run becomes one chapter.
+
 It writes <out>/chapters.json and <out>/images/<run>/<frame>.jpg. The images stay outside the JSON so
 the file can be read and checked; `npm run import -- <out>/chapters.json` loads both.
 
@@ -21,8 +26,9 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import random
 import re
-from collections import defaultdict
+from collections import Counter, defaultdict
 from pathlib import Path
 
 from PIL import Image
@@ -48,6 +54,9 @@ def main() -> None:
     ap.add_argument("--conditions", nargs="*", default=["true_class", "no_class"], help="conditions to take from --calls")
     ap.add_argument("--readings", type=Path, nargs="*", default=[], help="CSV: block_uid plus one column per reader")
     ap.add_argument("--frames", default="", help="frame range per chapter, e.g. 0-19 (default: all)")
+    ap.add_argument("--per-type", type=int, default=0, help="sample frames until every type has this many blocks")
+    ap.add_argument("--set-size", type=int, default=20, help="frames per set when sampling")
+    ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--skip-empty", action="store_true", help="leave out frames without blocks")
     ap.add_argument("--max-width", type=int, default=900)
     ap.add_argument("--quality", type=int, default=85)
@@ -74,17 +83,42 @@ def main() -> None:
             extra[uid].update({k: v for k, v in row.items() if v})
 
     lo, hi = (int(x) for x in a.frames.split("-")) if a.frames else (0, 10**9)
-    chapters, n_pages, n_blocks, n_cands = [], 0, 0, 0
+    frames = []  # (run, index, frame) in reading order
+    groups = []  # (chapter id, title, [frame keys])
     for run_file in a.runs:
         run = run_file.parent.name
         data = json.loads(run_file.read_text(encoding="utf-8"))
-        pages = []
+        keys = []
         for k, frame in enumerate(data.get("frames", [])):
-            if not lo <= k <= hi:
-                continue
-            blocks = frame.get("blocks", [])
-            if a.skip_empty and not blocks:
-                continue
+            if lo <= k <= hi and (frame.get("blocks") or not (a.skip_empty or a.per_type)):
+                frames.append((run, k, frame))
+                keys.append(len(frames) - 1)
+        groups.append((run, f"Chapter {len(groups) + 1}", keys))
+
+    if a.per_type:
+        rng = random.Random(a.seed)
+        types = Counter(b.get("class_name") for _, _, f in frames for b in f["blocks"])
+        have, chosen = Counter(), []
+        for t in sorted(types, key=lambda t: (types[t], t)):
+            pool = [i for i, (_, _, f) in enumerate(frames) if i not in chosen and any(b.get("class_name") == t for b in f["blocks"])]
+            rng.shuffle(pool)
+            while have[t] < a.per_type and pool:
+                i = pool.pop()
+                chosen.append(i)
+                have.update(b.get("class_name") for b in frames[i][2]["blocks"])
+        rng.shuffle(chosen)
+        groups = [(f"{a.study}-set{n // a.set_size + 1:02d}", f"Set {n // a.set_size + 1}", chosen[n:n + a.set_size])
+                  for n in range(0, len(chosen), a.set_size)]
+        short = {t: have[t] for t in types if have[t] < a.per_type}
+        print("blocks per type:", dict(sorted(have.items(), key=lambda x: -x[1])))
+        if short:
+            print("types with fewer blocks than asked (all available frames used):", short)
+
+    chapters, n_pages, n_blocks, n_cands = [], 0, 0, 0
+    for cid, title, keys in groups:
+        pages = []
+        for pos, i in enumerate(keys):
+            run, k, frame = frames[i]
             im = Image.open(local_path(frame["image_path"], a.project_root)).convert("RGB")
             sc = min(1.0, a.max_width / im.width)
             if sc < 1:
@@ -93,7 +127,7 @@ def main() -> None:
             (a.out / rel).parent.mkdir(parents=True, exist_ok=True)
             im.save(a.out / rel, quality=a.quality, optimize=True)
             out_blocks = []
-            for order, b in enumerate(blocks):
+            for order, b in enumerate(frame.get("blocks", [])):
                 uid = f"{run}/{b.get('frame_id', frame.get('id'))}/{b.get('id')}"
                 readings = {f: b[f] for f in ("text", "secondary_text", "corrected_text") if b.get(f)}
                 readings.update(extra.get(uid, {}))
@@ -104,11 +138,12 @@ def main() -> None:
                     "candidates": cands.get(uid, []),
                 })
                 n_cands += len(cands.get(uid, []))
-            pages.append({"index": k, "image_file": rel.as_posix(), "image_mime": "image/jpeg",
+            # In a sampled set the page index is the position in the set; the frame is named by its blocks' ids.
+            pages.append({"index": pos if a.per_type else k, "image_file": rel.as_posix(), "image_mime": "image/jpeg",
                           "width": im.width, "height": im.height, "blocks": out_blocks})
             n_blocks += len(out_blocks)
         n_pages += len(pages)
-        chapters.append({"id": run, "title": f"Chapter {len(chapters) + 1}", "pages": pages})
+        chapters.append({"id": cid, "title": title, "pages": pages})
 
     a.out.mkdir(parents=True, exist_ok=True)
     out = {"study": a.study, "steps": a.steps, "askOwnTranslation": not a.no_own, "guides": guides, "chapters": chapters}
