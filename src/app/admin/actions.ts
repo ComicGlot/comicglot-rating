@@ -2,34 +2,40 @@
 import bcrypt from "bcryptjs";
 import { randomBytes } from "node:crypto";
 import { revalidatePath } from "next/cache";
+import { assignChapters } from "@/lib/assign";
 import { requireAdmin } from "@/lib/auth";
-import { assignStudy } from "@/lib/assign";
 import { db } from "@/lib/db";
+import { STEP_ORDER } from "@/lib/steps";
 
 const ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no 0/O, 1/I
 
 function newCode(n = 10): string {
-  const b = randomBytes(n);
-  return Array.from(b, (x) => ALPHABET[x % ALPHABET.length]).join("");
+  return Array.from(randomBytes(n), (x) => ALPHABET[x % ALPHABET.length]).join("");
 }
 
-export type CreateRaterResult = { username: string; code: string; assigned: number } | { error: string } | null;
+function stepsFrom(form: FormData): string[] {
+  const picked = new Set(form.getAll("steps").map(String));
+  return STEP_ORDER.filter((s) => picked.has(s));
+}
 
-export async function createRater(_: CreateRaterResult, form: FormData): Promise<CreateRaterResult> {
+export type CodeResult = { username: string; code: string; assigned: number } | { error: string } | null;
+
+export async function createRater(_: CodeResult, form: FormData): Promise<CodeResult> {
   await requireAdmin();
   const username = String(form.get("username") ?? "").trim();
   const note = String(form.get("note") ?? "").trim();
   if (!/^[A-Za-z0-9._-]{2,40}$/.test(username)) return { error: "Use 2 to 40 letters, digits, dots, dashes or underscores." };
   if (await db.rater.findUnique({ where: { username } })) return { error: "That name is taken." };
   const code = newCode();
-  const rater = await db.rater.create({ data: { username, note: note || null, codeHash: await bcrypt.hash(code, 10) } });
-  let assigned = 0;
-  for (const st of await db.study.findMany({ where: { active: true } })) assigned += await assignStudy(rater.id, st.id);
+  const rater = await db.rater.create({
+    data: { username, note: note || null, steps: stepsFrom(form), codeHash: await bcrypt.hash(code, 10) },
+  });
+  const assigned = await assignChapters(rater.id);
   revalidatePath("/admin");
   return { username, code, assigned };
 }
 
-export async function resetCode(_: CreateRaterResult, form: FormData): Promise<CreateRaterResult> {
+export async function resetCode(_: CodeResult, form: FormData): Promise<CodeResult> {
   await requireAdmin();
   const id = String(form.get("raterId") ?? "");
   const r = await db.rater.findUnique({ where: { id } });
@@ -47,10 +53,15 @@ export async function toggleRater(form: FormData): Promise<void> {
   revalidatePath("/admin");
 }
 
-export async function assignActiveStudies(form: FormData): Promise<void> {
+export async function setRaterSteps(form: FormData): Promise<void> {
   await requireAdmin();
-  const id = String(form.get("raterId") ?? "");
-  for (const st of await db.study.findMany({ where: { active: true } })) await assignStudy(id, st.id);
+  await db.rater.update({ where: { id: String(form.get("raterId") ?? "") }, data: { steps: stepsFrom(form) } });
+  revalidatePath("/admin");
+}
+
+export async function assignNew(form: FormData): Promise<void> {
+  await requireAdmin();
+  await assignChapters(String(form.get("raterId") ?? ""));
   revalidatePath("/admin");
 }
 
@@ -59,5 +70,14 @@ export async function toggleStudy(form: FormData): Promise<void> {
   const id = String(form.get("studyId") ?? "");
   const st = await db.study.findUnique({ where: { id } });
   if (st) await db.study.update({ where: { id }, data: { active: !st.active } });
+  revalidatePath("/admin");
+}
+
+export async function updateStudy(form: FormData): Promise<void> {
+  await requireAdmin();
+  await db.study.update({
+    where: { id: String(form.get("studyId") ?? "") },
+    data: { steps: stepsFrom(form), askOwnTranslation: form.get("askOwn") === "on" },
+  });
   revalidatePath("/admin");
 }

@@ -8,84 +8,137 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
-// A rater account. The admin is defined by environment variables, not here.
+// A person who works through assigned chapters. The admin is defined by environment variables.
 model Rater {
-  id          String       @id @default(cuid())
-  username    String       @unique
+  id          String              @id @default(cuid())
+  username    String              @unique
   codeHash    String
-  active      Boolean      @default(true)
+  active      Boolean             @default(true)
   note        String?
-  createdAt   DateTime     @default(now())
-  assignments Assignment[]
+  // Steps this person does, e.g. ["types","transcribe"] for a Korean reader, ["compare"] for a translator.
+  // Empty means every step of the study.
+  steps       String[]
+  createdAt   DateTime            @default(now())
+  assignments ChapterAssignment[]
+  responses   Response[]
+  done        PageDone[]
 }
 
-// One round of the study (for example a pilot and the main round).
+// One round of the study. `steps` is the ordered list of tasks done on every page.
 model Study {
-  id        String   @id @default(cuid())
-  name      String   @unique
-  active    Boolean  @default(true)
-  // Per-rater flow: write an own translation first (optional), then compare.
-  askOwnTranslation Boolean @default(true)
-  createdAt DateTime @default(now())
-  items     Item[]
+  id                String    @id @default(cuid())
+  name              String    @unique
+  active            Boolean   @default(true)
+  steps             String[]  // subset of: types, transcribe, compare, review (review is always last)
+  askOwnTranslation Boolean   @default(true)
+  guides            Json?     // type -> style guide text, from ComicGlot data/prompts/style_guides.json
+  createdAt         DateTime  @default(now())
+  chapters          Chapter[]
 }
 
-// One text block shown to raters.
-model Item {
-  id          String       @id @default(cuid())
+model Chapter {
+  id          String              @id @default(cuid())
   studyId     String
-  study       Study        @relation(fields: [studyId], references: [id], onDelete: Cascade)
-  externalId  String       // block uid from the pipeline
-  className   String?      // hidden from raters; used in the export
-  sourceText  String       // Korean
-  context     String[]     // preceding lines of the scene
-  imageMime   String?
-  imageData   Bytes?       // crop with the block marked; served only to signed-in users
-  candidates  Candidate[]
-  assignments Assignment[]
+  study       Study               @relation(fields: [studyId], references: [id], onDelete: Cascade)
+  externalId  String              // pipeline run name
+  title       String
+  position    Int
+  pages       Page[]
+  assignments ChapterAssignment[]
 
   @@unique([studyId, externalId])
 }
 
-// One translation of an item under one condition (for example "guide" or "no_type").
+// One frame (strip segment) of a chapter.
+model Page {
+  id        String     @id @default(cuid())
+  chapterId String
+  chapter   Chapter    @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  index     Int
+  imageMime String
+  imageData Bytes      // served only to the admin and to raters assigned the chapter
+  width     Int
+  height    Int
+  blocks    Block[]
+  done      PageDone[]
+
+  @@unique([chapterId, index])
+}
+
+// One text block found by the pipeline on a page.
+model Block {
+  id         String      @id @default(cuid())
+  pageId     String
+  page       Page        @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  externalId String      // run/frame/block uid
+  order      Int         // reading order on the page
+  x0         Int
+  y0         Int
+  x1         Int
+  y1         Int
+  className  String?     // the detector's type; never shown to raters
+  sourceText String      // the pipeline's Korean reading; shown only in the compare step
+  readings   Json?       // other readers' outputs (general, comic, arbiter, ...) for the CER export
+  candidates Candidate[]
+  responses  Response[]
+}
+
+// One translation of a block under one condition (e.g. "guide", "no_type", "guide:model-x").
 model Candidate {
   id        String   @id @default(cuid())
-  itemId    String
-  item      Item     @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  blockId   String
+  block     Block    @relation(fields: [blockId], references: [id], onDelete: Cascade)
   condition String
-  model     String?
+  model     String?  // candidates are compared within the same model
   text      String
+  raw       String?  // full model reply, for audit (generated candidates)
   createdAt DateTime @default(now())
 
-  @@unique([itemId, condition])
+  @@unique([blockId, condition])
 }
 
-// Which rater sees which item, in which order, with which letters.
-model Assignment {
-  id        String     @id @default(cuid())
+model ChapterAssignment {
+  id        String   @id @default(cuid())
   raterId   String
-  rater     Rater      @relation(fields: [raterId], references: [id], onDelete: Cascade)
-  itemId    String
-  item      Item       @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  rater     Rater    @relation(fields: [raterId], references: [id], onDelete: Cascade)
+  chapterId String
+  chapter   Chapter  @relation(fields: [chapterId], references: [id], onDelete: Cascade)
   position  Int
-  // letter -> candidate id, shuffled per rater; never sent to the browser with conditions
-  letters   Json
-  judgement Judgement?
-  createdAt DateTime   @default(now())
+  createdAt DateTime @default(now())
 
-  @@unique([raterId, itemId])
-  @@index([raterId, position])
+  @@unique([raterId, chapterId])
 }
 
-model Judgement {
-  id             String     @id @default(cuid())
-  assignmentId   String     @unique
-  assignment     Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
-  ownTranslation String?
-  choice         String     // a letter, or "tie"
-  // letter -> "fine" | "added" | "overdone"
-  tone           Json
-  comment        String?
-  msSpent        Int?
-  createdAt      DateTime   @default(now())
+// What one rater entered for one block in one step.
+//   types:      { type: "<class>" | "not_text", note? }
+//   transcribe: { text, unreadable? }
+//   compare:    { letters: {A: candidateId, ...}, choice: "A" | "B" | "tie", tone: {A: "fine"|"added"|"overdone"}, own?, comment? }
+model Response {
+  id        String   @id @default(cuid())
+  raterId   String
+  rater     Rater    @relation(fields: [raterId], references: [id], onDelete: Cascade)
+  blockId   String
+  block     Block    @relation(fields: [blockId], references: [id], onDelete: Cascade)
+  step      String
+  data      Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([raterId, blockId, step])
+}
+
+// A step finished on a page (the review step marks the page as confirmed).
+model PageDone {
+  id        String   @id @default(cuid())
+  raterId   String
+  rater     Rater    @relation(fields: [raterId], references: [id], onDelete: Cascade)
+  pageId    String
+  page      Page     @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  step      String
+  missing   Boolean  @default(false) // types step: rater saw text with no box
+  note      String?
+  msSpent   Int?
+  createdAt DateTime @default(now())
+
+  @@unique([raterId, pageId, step])
 }

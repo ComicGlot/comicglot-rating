@@ -1,18 +1,17 @@
 # ComicGlot rating (private)
 
-Web app for the blind translator study of the ComicGlot paper. Raters sign in with a name and an access code, see one text block at a time (the frame with the block outlined, the previous lines and the Korean), may write their own translation first, then compare two or more candidate translations labelled only by letter. They pick the better one or a tie and flag tone that is added or overdone. The admin panel creates raters, shows progress and exports the judgements with the letters mapped back to conditions.
+Web app for the studies of the ComicGlot paper. Each rater signs in with a name and an access code and works through assigned chapters in order, page by page. On every page the steps come in a fixed order:
 
-Stack: Next.js 15 (App Router) on Vercel, Postgres through Prisma (Vercel Postgres / Neon), a signed cookie for sessions, OpenRouter for generating candidates from the admin side.
+| Step | What the rater does | What it measures (paper) |
+| --- | --- | --- |
+| Text types | Chooses the type of every numbered box, without seeing the detector's type; flags text that has no box. | Agreement of people with the detector's types on unseen chapters; missed text. |
+| Transcription | Types the Korean of every box from the crop, or marks it unreadable. Model readings are never shown. | Ground truth for the character error rate of every OCR system (`tab:cer`). |
+| Translations | May write an own translation first (then locked), sees the Korean and two unlabelled English versions per comparison, picks the better or a tie and marks tone that fits, is added, or is overdone. | The blind study of the type's guide against no type (`tab:study`), and the same for other models (`tab:models`). |
+| Check the page | Sees everything entered on the page, can go back to any step, and confirms the page. Changing a step later asks for a new confirmation. | Completeness. |
 
-## Status
+A study chooses which steps it uses; a rater can be limited to some of them (a Korean reader does types and transcription, a translator does translations). The admin panel creates raters with one-time codes, sets steps, shows progress per step, generates more candidate translations through OpenRouter, and exports one CSV per step with letters mapped back to conditions.
 
-Skeleton, tested end to end on a local Postgres with synthetic items:
-- wrong code rejected;
-- admin creates a rater and gets a one-time code;
-- the rater sees the image, writes an own translation, compares A/B, saves, and moves to the next item;
-- the page never contains the condition names;
-- raters cannot reach the admin pages or the export;
-- the CSV maps letters to conditions.
+Stack: Next.js 15 (App Router) on Vercel, Postgres through Prisma (Vercel Postgres / Neon), a signed cookie for sessions, OpenRouter for model calls from the admin side.
 
 ## Set up on Vercel
 
@@ -21,36 +20,49 @@ Skeleton, tested end to end on a local Postgres with synthetic items:
 3. Add the other variables from `.env.example`:
    - `SESSION_SECRET`: 32+ random characters, e.g. `openssl rand -base64 48`;
    - `ADMIN_USERNAME` and `ADMIN_PASSWORD`;
-   - optionally `OPENROUTER_API_KEY`.
-4. Create the tables once from your machine: copy `.env.example` to `.env`, fill in the two database URLs, run `npm install` then `npm run db:push`.
-5. Deploy. Open the site, sign in as the admin.
+   - `OPENROUTER_API_KEY` for the model comparison.
+4. Create the tables from your machine: copy `.env.example` to `.env`, fill in the two database URLs, run `npm install` then `npm run db:push`. Run `npm run db:push` again after a schema change.
+5. Deploy. Open the site and sign in as the admin.
 
-## Load a study
+## Load chapters
 
 ```bash
-# in the ComicGlot checkout: produce translations under each condition
-python -m eval.translation_study.run_conditions ... --out study_round1
-# here: build the import file (page crops are embedded; data/ is git-ignored)
-python tools/export_packet.py --comicglot ../ComicGlot --calls ../ComicGlot/study_round1/calls.jsonl \
-    --runs ../ComicGlot/data/output/RUN/chapter_full_results.json --study round1 --out data/round1.json
-npm run import -- data/round1.json     # uses DATABASE_URL from .env
+# 1. In the ComicGlot checkout, if the study has translations: produce them under each condition
+python -m eval.translation_study.run_conditions --runs RUN.json ... --sample sample.csv \
+    --source corrected --model MODEL --conditions true_class no_class --out study_round1
+
+# 2. Here (with Pillow installed): pages, boxes, readings and candidates into data/ (git-ignored)
+python tools/export_chapters.py --project-root ../ComicGlot \
+    --runs ../ComicGlot/data/output/RUN/chapter_full_results.json ... \
+    --calls ../ComicGlot/study_round1/calls.jsonl --readings ocr_systems.csv \
+    --study round1 --frames 0-29 --skip-empty --out data/round1
+
+# 3. Into the database named in .env
+npm run import -- data/round1/chapters.json
 ```
 
-Then create raters in the admin panel. Each new rater gets every item of the active studies, in an order and with letters shuffled per rater. "Assign new items" gives existing raters items imported later.
+- `--readings` takes CSV files with a `block_uid` column and one column per OCR system; they appear as `reading:<name>` columns in the transcription export next to the rater's text.
+- Importing a chapter again adds new candidates and readings and changes nothing else; candidates raters may have seen are never replaced.
+- New raters get every chapter of the open studies; "Assign new chapters" gives existing raters chapters imported later.
 
-Candidates can also be generated from the admin side through OpenRouter: `POST /api/admin/generate` with `{ studyId, condition, model, guides? }` fills up to 25 missing items per call. With `guides` (class name to guide text) each block gets its type's guide; without it the block is translated with no type.
+## Other models
+
+"Translate with another model" in the admin panel sends every block of a study through OpenRouter with the pipeline's own prompt (`eval/translation_study/run_conditions.py`), the study's style guides and the three previous lines. Each condition is stored as `<condition>@<model>` (with `+page` when the page image is sent), and candidates are compared only with others of the same model, so each model adds one comparison per block.
 
 ## Data and privacy
 
-- Page crops are stored in the database and served only through `/api/image/<id>` to the admin and to raters assigned that item.
-- Never commit import files, crops, workbooks or keys; `data/`, `*.xlsx` and `key.json` are ignored.
+- Pages are stored in the database and served only through `/api/page-image/<id>` to the admin and to raters assigned that chapter. The chapters belong to their publishers: never make the deployment public beyond the raters.
+- Never commit import files, images, workbooks or keys; `data/`, `*.xlsx` and `key.json` are ignored.
 - Raters are identified by the name the admin gives them; keep real identities outside the app.
+
+## Tested
+
+On a local Postgres with a synthetic two-page chapter (`next build`, then a Playwright run): admin login, a rater with a one-time code, all four steps on both pages with the own translation locked once the candidates are shown, a page without boxes skipped, the overview at 100%, raters kept out of the admin export, and the four CSV exports with letters mapped back to conditions. The OpenRouter call itself was not run (no key in the test environment).
 
 ## Next steps
 
-- Per-candidate scales from the rater guidelines (adequacy, tone fit, fluency, error counts) as an optional second stage.
-- An instructions and consent page shown once before the first item; a short practice item.
-- Attention checks (an item whose two candidates are identical, or one clearly wrong).
-- Inter-rater agreement (Krippendorff's alpha) and the sign test in the admin view, matching `analyse_ratings.py` in ComicGlot.
-- Images in Vercel Blob instead of the database if the study grows past a few hundred items.
+- An instructions and consent page before the first page, and a short practice chapter.
+- Attention checks (a comparison whose two versions are identical).
+- Agreement (Krippendorff's alpha) and the sign test in the admin view, matching `analyse_ratings.py`.
+- Images in Vercel Blob instead of the database if the study grows past a few dozen chapters.
 - Rate limiting on the login route.

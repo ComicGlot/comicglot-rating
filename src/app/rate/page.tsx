@@ -1,59 +1,64 @@
+import Link from "next/link";
 import { requireRater } from "@/lib/auth";
-import { db } from "@/lib/db";
-import RateForm from "./RateForm";
+import { loadPlan } from "@/lib/flow";
+import { STEP_LABEL } from "@/lib/steps";
 
 export const dynamic = "force-dynamic";
 
-export default async function RatePage() {
+export default async function RateHome() {
   const s = await requireRater();
-  const where = { raterId: s.sub, item: { study: { active: true } } };
-  const [total, done, next] = await Promise.all([
-    db.assignment.count({ where }),
-    db.assignment.count({ where: { ...where, judgement: { isNot: null } } }),
-    db.assignment.findFirst({
-      where: { ...where, judgement: { is: null } },
-      orderBy: { position: "asc" },
-      include: { item: { include: { candidates: true, study: true } } },
-    }),
-  ]);
-
-  const header = (
-    <div className="row" style={{ alignItems: "center", justifyContent: "space-between" }}>
-      <h1>Translation study</h1>
-      <form action="/api/logout" method="post"><button className="secondary">Sign out</button></form>
-    </div>
-  );
-
-  if (!next) {
-    return (
-      <main>
-        {header}
-        <div className="card">{total ? "All items are rated. Thank you." : "No items are assigned to you yet."}</div>
-      </main>
-    );
-  }
-
-  // Letters only: the browser never learns which condition produced which text.
-  const byId = new Map(next.item.candidates.map((c) => [c.id, c.text]));
-  const letters = Object.entries(next.letters as Record<string, string>)
-    .map(([letter, id]) => ({ letter, text: byId.get(id) ?? "" }))
-    .sort((a, b) => a.letter.localeCompare(b.letter));
-
+  const plan = await loadPlan(s.sub);
+  const total = plan.reduce((n, c) => n + c.todo.length, 0);
+  const done = plan.reduce((n, c) => n + c.todo.filter((t) => t.done).length, 0);
   return (
     <main>
-      {header}
-      <div className="muted">Item {done + 1} of {total}</div>
-      <div className="bar"><div style={{ width: `${(100 * done) / Math.max(1, total)}%` }} /></div>
-      <RateForm
-        key={next.id}
-        assignmentId={next.id}
-        hasImage={!!next.item.imageMime}
-        itemId={next.item.id}
-        source={next.item.sourceText}
-        context={next.item.context}
-        candidates={letters}
-        askOwn={next.item.study.askOwnTranslation}
-      />
+      <div className="row" style={{ alignItems: "center", justifyContent: "space-between" }}>
+        <h1>Hello, {s.username}</h1>
+        <form action="/api/logout" method="post"><button className="secondary">Sign out</button></form>
+      </div>
+      {plan.length === 0 ? (
+        <div className="card">No chapters are assigned to you yet.</div>
+      ) : (
+        <>
+          <div className="bar"><div style={{ width: `${(100 * done) / Math.max(1, total)}%` }} /></div>
+          <div className="card">
+            <table>
+              <thead><tr><th>Chapter</th><th>Pages</th><th>Your steps</th><th>Progress</th></tr></thead>
+              <tbody>
+                {plan.map((c) => {
+                  const d = c.todo.filter((t) => t.done).length;
+                  return (
+                    <tr key={c.chapter.id}>
+                      <td>
+                        {c.chapter.title}
+                        <div className="chips">
+                          {c.pages.map((pg) => {
+                            const t = c.todo.filter((x) => x.pageId === pg.id);
+                            if (!t.length) return null;
+                            const open = t.find((x) => !x.done) ?? t[t.length - 1];
+                            const all = t.every((x) => x.done);
+                            return (
+                              <Link key={pg.id} href={`/rate/work?page=${pg.id}&step=${open.step}`} className={`chip${all ? " done" : ""}`} title={all ? "Confirmed" : `Next: ${STEP_LABEL[open.step]}`}>
+                                {pg.index + 1}
+                              </Link>
+                            );
+                          })}
+                        </div>
+                      </td>
+                      <td>{c.pages.length}</td>
+                      <td className="muted">{c.steps.map((x) => STEP_LABEL[x]).join(" → ")}</td>
+                      <td>{d} / {c.todo.length}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <p>
+            {done < total ? <Link href="/rate/work"><button>{done ? "Continue" : "Start"}</button></Link> : <b>Everything is done. Thank you.</b>}
+          </p>
+        </>
+      )}
     </main>
   );
 }

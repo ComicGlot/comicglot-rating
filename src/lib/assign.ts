@@ -1,29 +1,17 @@
 import { db } from "./db";
-import { LETTERS, shuffled } from "./shuffle";
 
-// Give a rater every item of a study that they do not have yet.
-// Item order and candidate letters are shuffled per rater.
-export async function assignStudy(raterId: string, studyId: string): Promise<number> {
-  const items = await db.item.findMany({
-    where: { studyId },
-    include: { candidates: { select: { id: true } } },
-    orderBy: { externalId: "asc" },
+// Gives a rater every chapter of the active studies that they do not have yet, in study and chapter order.
+// Returns the number of chapters added.
+export async function assignChapters(raterId: string): Promise<number> {
+  const have = new Set((await db.chapterAssignment.findMany({ where: { raterId }, select: { chapterId: true } })).map((a) => a.chapterId));
+  const last = await db.chapterAssignment.aggregate({ where: { raterId }, _max: { position: true } });
+  let pos = (last._max.position ?? -1) + 1;
+  const chapters = await db.chapter.findMany({
+    where: { study: { active: true } },
+    orderBy: [{ study: { createdAt: "asc" } }, { position: "asc" }],
+    select: { id: true },
   });
-  const have = new Set(
-    (await db.assignment.findMany({ where: { raterId }, select: { itemId: true } })).map((a) => a.itemId),
-  );
-  const start = await db.assignment.count({ where: { raterId } });
-  const todo = shuffled(items.filter((i) => !have.has(i.id) && i.candidates.length >= 2), `${raterId}:${studyId}`);
-  await db.assignment.createMany({
-    data: todo.map((it, n) => {
-      const cands = shuffled(it.candidates.map((c) => c.id), `${raterId}:${it.id}`);
-      return {
-        raterId,
-        itemId: it.id,
-        position: start + n,
-        letters: Object.fromEntries(cands.map((id, k) => [LETTERS[k], id])),
-      };
-    }),
-  });
-  return todo.length;
+  const add = chapters.filter((c) => !have.has(c.id)).map((c) => ({ raterId, chapterId: c.id, position: pos++ }));
+  if (add.length) await db.chapterAssignment.createMany({ data: add });
+  return add.length;
 }
