@@ -1,17 +1,11 @@
-import { cookies, headers } from "next/headers";
-import { LOCALE_COOKIE, LOCALES, MESSAGES, isLocale, type Locale, type Messages } from "./index";
+import { cookies } from "next/headers";
+import { LOCALE_COOKIE, MESSAGES, isLocale, type Locale, type Messages } from "./index";
 
-// The rater's interface language: the cookie set by the language switch, else the browser's first
-// supported language, else English.
+// The rater's interface language: the one chosen with the language switch, else English.
+// The browser's language is deliberately not used: everyone starts in English and switches if they like.
 export async function getLocale(): Promise<Locale> {
   const c = (await cookies()).get(LOCALE_COOKIE)?.value;
-  if (isLocale(c)) return c;
-  const accept = (await headers()).get("accept-language") ?? "";
-  for (const part of accept.split(",")) {
-    const code = part.trim().slice(0, 2).toLowerCase();
-    if ((LOCALES as readonly string[]).includes(code)) return code as Locale;
-  }
-  return "en";
+  return isLocale(c) ? c : "en";
 }
 
 export async function getMessages(): Promise<{ locale: Locale; m: Messages }> {
