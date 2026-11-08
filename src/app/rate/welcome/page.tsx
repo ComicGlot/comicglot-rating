@@ -4,53 +4,54 @@ import Icon from "@/components/Icon";
 import { requireRater } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { loadPlan } from "@/lib/flow";
-import { STEP_GUIDE, STEP_HELP, STEP_LABEL, type Step } from "@/lib/steps";
+import { fmt } from "@/lib/i18n";
+import { getMessages } from "@/lib/i18n/server";
+import { type Step } from "@/lib/steps";
 import { acceptConsent } from "../consent";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Welcome" };
 
-const DEFAULT_INTRO = `ComicGlot is a research project on how the shape of a speech balloon or a piece of lettering in a webtoon should change its translation. This study checks how well the system reads and translates such text, against the judgement of people who know the language.
-
-You will see single frames from Korean webtoons, one at a time, with every text on the frame numbered. The frames come from many series, so the story will not run on from one frame to the next.`;
-
-const MINUTES: Record<Step, number> = { types: 0.25, transcribe: 0.6, compare: 0.8, review: 0.1 };
+const MINUTES: Record<Step, number> = { types: 0.25, transcribe: 0.6, compare: 0.9, review: 0.1 };
 
 export default async function Welcome({ searchParams }: { searchParams: Promise<{ missing?: string }> }) {
   const s = await requireRater();
   const q = await searchParams;
+  const { m } = await getMessages();
   const rater = await db.rater.findUniqueOrThrow({ where: { id: s.sub } });
+  if (rater.consentAt && !q.missing) redirect("/rate");
   const plan = await loadPlan(s.sub);
   const study = plan[0]?.chapter.study;
   const steps = [...new Set(plan.flatMap((c) => c.steps))] as Step[];
   const blocks = await db.block.count({ where: { page: { chapter: { id: { in: plan.map((c) => c.chapter.id) }, practice: false } } } });
   const frames = plan.filter((c) => !c.chapter.practice).reduce((n, c) => n + c.pages.length, 0);
-  const minutes = Math.round(blocks * steps.reduce((m, x) => m + MINUTES[x], 0) + frames * 0.2);
-  const intro = (study?.intro || DEFAULT_INTRO).split(/\n\s*\n/);
+  const minutes = Math.round(blocks * steps.reduce((x, st) => x + MINUTES[st], 0) + frames * 0.2);
+  // A study's own introduction (written by the admin) replaces the default text.
+  const intro = study?.intro ? study.intro.split(/\n\s*\n/) : m.welcome.intro;
   const hasPractice = plan.some((c) => c.chapter.practice);
-  if (rater.consentAt && !q.missing) redirect("/rate");
 
   return (
     <>
-      <TopNav home="/rate" user={s.username} crumbs={["Welcome"]} />
+      <TopNav home="/rate" user={s.username} crumbs={[m.welcome.title]} lang />
       <main className="wrap narrow">
-        <span className="label">Before you start</span>
-        <h1 className="display" style={{ margin: "8px 0 16px" }}>Welcome, {s.username}</h1>
+        <span className="label">{m.welcome.beforeStart}</span>
+        <h1 className="display" style={{ margin: "8px 0 16px" }}>{fmt(m.welcome.hello, { name: s.username })}</h1>
         {intro.map((p, i) => <p key={i} className="read" style={{ fontSize: 16, lineHeight: "26px" }}>{p}</p>)}
+        {steps.includes("compare") && <div className="callout info" style={{ marginTop: 8 }}>{m.welcome.englishNote}</div>}
 
         <div className="section">
-          <span className="label">What you will do on each frame</span>
+          <span className="label">{m.welcome.whatYouDo}</span>
           <div className="stack" style={{ gap: 8 }}>
-            {steps.filter((x) => x !== "review").map((x, i) => (
+            {steps.filter((x): x is Exclude<Step, "review"> => x !== "review").map((x, i) => (
               <div key={x} className="card tight" style={{ display: "flex", gap: 14 }}>
-                <span className="pill dark" style={{ height: 24, minWidth: 24, justifyContent: "center" }}>{i + 1}</span>
+                <span className="qnum" style={{ background: "var(--accent)", color: "var(--on-accent)" }}>{i + 1}</span>
                 <div className="grow">
-                  <div className="h3">{STEP_LABEL[x]}</div>
-                  <p className="read muted" style={{ margin: "4px 0 0" }}>{STEP_HELP[x]}</p>
+                  <div className="h3">{m.steps[x].label}</div>
+                  <p className="read muted" style={{ margin: "4px 0 0" }}>{m.steps[x].help}</p>
                   <details className="more" style={{ marginTop: 8 }}>
-                    <summary className="small">Details</summary>
+                    <summary className="small">{m.welcome.details}</summary>
                     <ul className="read" style={{ margin: "8px 0 0", paddingLeft: 18 }}>
-                      {STEP_GUIDE[x as Exclude<Step, "review">].map((g) => <li key={g}>{g}</li>)}
+                      {m.steps[x].guide.map((g) => <li key={g}>{g}</li>)}
                     </ul>
                   </details>
                 </div>
@@ -58,10 +59,10 @@ export default async function Welcome({ searchParams }: { searchParams: Promise<
             ))}
             {steps.includes("review") && (
               <div className="card tight" style={{ display: "flex", gap: 14 }}>
-                <span className="pill" style={{ height: 24, minWidth: 24, justifyContent: "center" }}><Icon name="check" size={12} /></span>
+                <span className="qnum"><Icon name="check" size={12} /></span>
                 <div className="grow">
-                  <div className="h3">{STEP_LABEL.review}</div>
-                  <p className="read muted" style={{ margin: "4px 0 0" }}>{STEP_HELP.review}</p>
+                  <div className="h3">{m.steps.review.label}</div>
+                  <p className="read muted" style={{ margin: "4px 0 0" }}>{m.steps.review.help}</p>
                 </div>
               </div>
             )}
@@ -69,28 +70,25 @@ export default async function Welcome({ searchParams }: { searchParams: Promise<
         </div>
 
         <div className="section grid3">
-          <div className="stat"><span className="label">Frames</span><div className="v">{frames}</div><div className="d">{blocks} texts in all</div></div>
-          <div className="stat"><span className="label">Time</span><div className="v">~{Math.max(5, Math.round(minutes / 5) * 5)}<small> min</small></div><div className="d">A rough guess; take breaks whenever you like</div></div>
-          <div className="stat"><span className="label">Saving</span><div className="v" style={{ fontSize: 20 }}>Automatic</div><div className="d">Each frame is saved when you finish it; drafts stay in this browser</div></div>
+          <div className="stat"><span className="label">{m.welcome.frames}</span><div className="v">{frames}</div><div className="d">{fmt(m.welcome.textsInAll, { n: blocks })}</div></div>
+          <div className="stat"><span className="label">{m.welcome.time}</span><div className="v">~{Math.max(5, Math.round(minutes / 5) * 5)}<small> {m.welcome.min}</small></div><div className="d">{m.welcome.timeHint}</div></div>
+          <div className="stat"><span className="label">{m.welcome.saving}</span><div className="v" style={{ fontSize: 20 }}>{m.welcome.savingValue}</div><div className="d">{m.welcome.savingHint}</div></div>
         </div>
 
         <div className="section card">
-          <span className="label">Your data</span>
+          <span className="label">{m.welcome.yourData}</span>
           <ul className="read" style={{ margin: "8px 0 16px", paddingLeft: 18 }}>
-            <li>We store what you enter, the time you spend on each frame and the name you signed in with. Nothing else.</li>
-            <li>Your answers are analysed together with other raters&apos; and reported only as totals. Your own translations may be quoted without your name.</li>
-            <li>The frames belong to their publishers. Please do not save, copy or share them, and do not look the series up.</li>
-            <li>You can stop at any time and ask for your answers to be removed.</li>
+            {m.welcome.data.map((d) => <li key={d}>{d}</li>)}
           </ul>
           <form action={acceptConsent} className="stack" style={{ gap: 16 }}>
             <label className="check">
               <input type="checkbox" name="agree" required />
-              I have read this and agree to take part.
+              {m.welcome.agree}
             </label>
-            {q.missing && <div className="callout warn">Please tick the box to continue.</div>}
+            {q.missing && <div className="callout warn">{m.welcome.tickToContinue}</div>}
             <div className="row">
-              <button className="btn primary lg">{hasPractice ? "Start with a practice frame" : "Start"} <Icon name="arrowR" /></button>
-              <span className="muted small">Press <span className="kbd">?</span> on any frame to see the guide again.</span>
+              <button className="btn primary lg">{hasPractice ? m.welcome.startPractice : m.welcome.start} <Icon name="arrowR" /></button>
+              <span className="muted small">{fmt(m.welcome.guideAgain, { key: "?" })}</span>
             </div>
           </form>
         </div>

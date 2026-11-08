@@ -5,7 +5,9 @@ import { db } from "@/lib/db";
 import { canSeePage, loadPlan, setsFor } from "@/lib/flow";
 import { STEP_ORDER, TONE, TYPES, type Step } from "@/lib/steps";
 
-export type SaveResult = { error: string } | null;
+// Errors are codes; the work screen shows them in the rater's language (messages.errors).
+export type SaveError = "notAssigned" | "unreadableForm" | "notYourStep" | "finishOther" | "chooseType" | "typeOrUnreadable" | "chooseVersion" | "chooseTone";
+export type SaveResult = { error: SaveError; n?: number } | null;
 
 const TYPE_SET = new Set<string>(TYPES.map(([v]) => v));
 const TONE_SET = new Set<string>(TONE);
@@ -19,22 +21,22 @@ export async function saveStep(_: SaveResult, form: FormData): Promise<SaveResul
   const pageId = String(form.get("pageId") ?? "");
   const step = String(form.get("step") ?? "") as Step;
   const ms = Math.max(0, Math.min(Number(form.get("ms")) || 0, 6 * 3600 * 1000));
-  if (!STEP_ORDER.includes(step) || !(await canSeePage(s.sub, pageId))) return { error: "This frame is not assigned to you." };
+  if (!STEP_ORDER.includes(step) || !(await canSeePage(s.sub, pageId))) return { error: "notAssigned" };
 
   let payload: { blocks?: Record<string, In>; missing?: boolean; note?: string };
   try {
     payload = JSON.parse(String(form.get("payload") ?? "{}"));
   } catch {
-    return { error: "The form could not be read. Reload the page." };
+    return { error: "unreadableForm" };
   }
 
   const page = await db.page.findUniqueOrThrow({
     where: { id: pageId },
-    include: { blocks: { include: { candidates: { select: { id: true, model: true } } } } },
+    include: { blocks: { include: { candidates: { select: { id: true, model: true, text: true } } } } },
   });
   const plan = (await loadPlan(s.sub)).find((c) => c.chapter.id === page.chapterId);
   const pageTodo = plan?.todo.filter((t) => t.pageId === pageId) ?? [];
-  if (!pageTodo.some((t) => t.step === step)) return { error: "This step is not part of your tasks for this frame." };
+  if (!pageTodo.some((t) => t.step === step)) return { error: "notYourStep" };
 
   const rows: { blockId: string; data: In }[] = [];
   const given = payload.blocks ?? {};
@@ -47,18 +49,18 @@ export async function saveStep(_: SaveResult, form: FormData): Promise<SaveResul
 
   if (step === "review") {
     const open = pageTodo.filter((t) => t.step !== "review" && !t.done);
-    if (open.length) return { error: "Finish the other steps of this frame first." };
+    if (open.length) return { error: "finishOther" };
   } else {
     for (const b of page.blocks) {
       const a = given[b.id] ?? {};
       if (step === "types") {
         const type = str(a.type, 40);
-        if (!TYPE_SET.has(type)) return { error: `Choose a type for text ${b.order + 1}.` };
+        if (!TYPE_SET.has(type)) return { error: "chooseType", n: b.order + 1 };
         rows.push({ blockId: b.id, data: { type, note: str(a.note, 300) || undefined, ms: msOf(b.id, a) } });
       } else if (step === "transcribe") {
         const unreadable = a.unreadable === true;
         const text = str(a.text, 1000);
-        if (!unreadable && !text) return { error: `Type text ${b.order + 1} or mark it unreadable.` };
+        if (!unreadable && !text) return { error: "typeOrUnreadable", n: b.order + 1 };
         rows.push({ blockId: b.id, data: { text, ...(unreadable ? { unreadable } : {}), ms: msOf(b.id, a) } });
       } else if (step === "compare") {
         const sets = setsFor(s.sub, b.id, b.candidates);
@@ -68,9 +70,11 @@ export async function saveStep(_: SaveResult, form: FormData): Promise<SaveResul
         for (const [k, set] of sets.entries()) {
           const x = ans[k] ?? {};
           const choice = str(x.choice, 8);
-          if (choice !== "tie" && !(choice in set.letters)) return { error: `Choose a version for text ${b.order + 1}.` };
+          if (choice !== "tie" && !(choice in set.letters)) return { error: "chooseVersion", n: b.order + 1 };
           const toneIn = (x.tone ?? {}) as Record<string, unknown>;
-          const tone = Object.fromEntries(Object.keys(set.letters).map((l) => [l, TONE_SET.has(String(toneIn[l])) ? String(toneIn[l]) : "fine"]));
+          // Tone is a required answer for every version; nothing is filled in for the rater.
+          if (Object.keys(set.letters).some((l) => !TONE_SET.has(String(toneIn[l])))) return { error: "chooseTone", n: b.order + 1 };
+          const tone = Object.fromEntries(Object.keys(set.letters).map((l) => [l, String(toneIn[l])]));
           // Store the letters with their candidates, so the export can unblind without recomputing.
           out.push({ model: set.key || null, letters: set.letters, choice, tone });
         }

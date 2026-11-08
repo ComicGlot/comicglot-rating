@@ -13,9 +13,12 @@ A study chooses which steps it uses; a rater can be limited to some of them (a K
 
 ### For raters
 
+- Interface languages: English, French, German, Russian and Ukrainian, chosen at the top of every rater page (and on the sign-in page); the browser's language is the default. Only the interface changes: translations are always judged into English. Texts live in `src/lib/i18n/<lang>.ts`, checked against the English file by the type system. The admin pages stay in English.
+- The translations step asks two numbered questions per comparison: which version is better (A, equal, B) and the tone of each version (fits, adds tone, overdone). Both are required; nothing is preselected.
+- Pairs whose two versions are the same text are not shown (the only answer would be "equal"); the results page counts them per family as texts where the guide changed nothing. Attention checks are identical on purpose and stay.
 - A welcome page before the first frame: what the study is, the steps this person does, a time estimate, how their data is used, and a consent box (stored as `Rater.consentAt`). The text above the steps is the study's `intro`, editable in the admin panel.
 - An optional practice set, shown first and left out of every export and result.
-- The work screen: the frame on the left (zoom, focus on the active box), one text at a time on the right with a zoomed crop, and the steps as tabs. Shortcuts: `J`/`K` next and previous text, `1`–`0` types, `A`/`B`/`T` choices, `Ctrl+Enter` next text or save, `?` the guide.
+- The work screen: the frame on the left (zoom, focus on the active box), one text at a time on the right with a zoomed crop, and the steps as tabs. Shortcuts: `J`/`K` next and previous text, `1`–`0` types, `A`/`B`/`E` the better version, `1`/`2`/`3` the tone of the next version, `Ctrl+Enter` next text or save, `?` the guide.
 - Drafts are kept in the browser until the frame is saved, so a reload or a lost connection loses nothing.
 - Time is recorded per text (`ms` in each answer) as well as per frame.
 - Light and dark themes; the layout works down to phone width, although desktop is the intended setting.

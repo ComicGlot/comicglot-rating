@@ -5,7 +5,10 @@ import GuideDrawer from "@/components/GuideDrawer";
 import { requireRater } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { canSeePage, loadPlan, nextTask, setsFor } from "@/lib/flow";
-import { STEP_LABEL, STEP_ORDER, type Step } from "@/lib/steps";
+import { fmt } from "@/lib/i18n";
+import { getMessages } from "@/lib/i18n/server";
+import { chapterTitle } from "@/lib/i18n/titles";
+import { STEP_ORDER, type Step } from "@/lib/steps";
 import Workbench, { type WBBlock } from "./Workbench";
 
 export const dynamic = "force-dynamic";
@@ -13,6 +16,7 @@ export const metadata = { title: "Frame" };
 
 export default async function Work({ searchParams }: { searchParams: Promise<{ page?: string; step?: string; saved?: string }> }) {
   const s = await requireRater();
+  const { m } = await getMessages();
   const rater = await db.rater.findUnique({ where: { id: s.sub }, select: { consentAt: true } });
   if (!rater?.consentAt) redirect("/rate/welcome");
   const q = await searchParams;
@@ -66,10 +70,11 @@ export default async function Work({ searchParams }: { searchParams: Promise<{ p
       <TopNav
         home="/rate"
         user={s.username}
-        crumbs={[{ label: "Your frames", href: "/rate" }, { label: page.chapter.title, href: "/rate" }, { label: `Frame ${framePos + 1} of ${chapterPlan.pages.length}`, strong: true }]}
+        crumbs={[{ label: m.work.yourFrames, href: "/rate" }, { label: chapterTitle(page.chapter, m), href: "/rate" }, { label: fmt(m.work.frameOf, { n: framePos + 1, total: chapterPlan.pages.length }), strong: true }]}
         right={<GuideDrawer steps={chapterPlan.steps} />}
+        lang
       >
-        {page.chapter.practice && <span className="pill violet">Practice</span>}
+        {page.chapter.practice && <span className="pill violet">{m.work.practice}</span>}
         <span style={{ flex: 1 }} />
         <Link href="/rate" className="minibar" title={`${done} of ${all} tasks done`} style={{ minWidth: 160 }}>
           <span className="small muted num">{pct}%</span>
@@ -88,7 +93,7 @@ export default async function Work({ searchParams }: { searchParams: Promise<{ p
         pageNote={typesDone?.note ?? ""}
         tabs={pageTodo.map((t) => ({ step: t.step, done: t.done }))}
         reviewSteps={pageTodo.map((t) => t.step).filter((x) => x !== "review")}
-        saved={q.saved ? (q.saved === "review" ? "Frame confirmed" : `${STEP_LABEL[q.saved as Step] ?? "Step"} saved`) : undefined}
+        saved={q.saved && (STEP_ORDER as readonly string[]).includes(q.saved) ? q.saved : undefined}
       />
     </>
   );

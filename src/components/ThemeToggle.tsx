@@ -3,7 +3,8 @@ import { useEffect, useState } from "react";
 import Icon from "./Icon";
 
 // Light or dark for this browser; the default follows the system setting.
-export default function ThemeToggle() {
+export default function ThemeToggle({ labels }: { labels?: [string, string] }) {
+  const [light, dark_] = labels ?? ["Light theme", "Dark theme"];
   const [dark, setDark] = useState<boolean | null>(null);
   useEffect(() => {
     const t = document.documentElement.dataset.theme;
@@ -17,7 +18,7 @@ export default function ThemeToggle() {
     setDark(!dark);
   };
   return (
-    <button type="button" className="btn ghost icon" onClick={flip} title={dark ? "Light theme" : "Dark theme"} aria-label={dark ? "Switch to the light theme" : "Switch to the dark theme"}>
+    <button type="button" className="btn ghost icon" onClick={flip} title={dark ? light : dark_} aria-label={dark ? light : dark_}>
       <Icon name={dark ? "sun" : "moon"} />
     </button>
   );

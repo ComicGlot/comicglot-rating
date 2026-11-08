@@ -1,26 +1,33 @@
 import Link from "next/link";
+import { getMessages } from "@/lib/i18n/server";
 import Icon from "./Icon";
+import LangSwitch from "./LangSwitch";
+import Logo from "./Logo";
 import ThemeToggle from "./ThemeToggle";
 
 // The 56px bar on every signed-in page: brand at left, where you are in the middle, account at right.
-export default function TopNav({
+// Rater pages show the language switch; the admin pages stay in English.
+export default async function TopNav({
   home,
   user,
   crumbs = [],
   children,
   right,
+  lang = false,
 }: {
   home: string;
   user?: string;
   crumbs?: (string | { label: string; href?: string; strong?: boolean })[];
   children?: React.ReactNode;
   right?: React.ReactNode;
+  lang?: boolean;
 }) {
+  const { m } = await getMessages();
   return (
     <header className="topnav">
-      <Link href={home} className="brand" aria-label="ComicGlot rating, home">
-        <span className="glyph" />
-        <span>ComicGlot <span className="sub">rating</span></span>
+      <Link href={home} className="brand" aria-label="ComicGlot rating">
+        <Logo size={26} />
+        <span className="logo-word">ComicGlot <span className="sub">rating</span></span>
       </Link>
       <div className="navmid">
         {crumbs.length > 0 && (
@@ -41,12 +48,13 @@ export default function TopNav({
       </div>
       <div className="navright">
         {right}
-        <ThemeToggle />
+        {lang && <LangSwitch />}
+        <ThemeToggle labels={lang ? [m.common.lightTheme, m.common.darkTheme] : undefined} />
         {user && (
           <>
             <span className="avatar" title={user}>{user.slice(0, 1)}</span>
             <form action="/api/logout" method="post">
-              <button className="btn ghost icon" title="Sign out" aria-label="Sign out"><Icon name="logout" /></button>
+              <button className="btn ghost icon" title={lang ? m.common.signOut : "Sign out"} aria-label={lang ? m.common.signOut : "Sign out"}><Icon name="logout" /></button>
             </form>
           </>
         )}

@@ -2,6 +2,7 @@
 // ComicGlot repository (eval/ocr_eval.py, the pairwise analysis) closely enough to watch a study as it runs;
 // the numbers in the paper come from those scripts and the CSV exports.
 import { db } from "./db";
+import { sameText } from "./flow";
 import { ATTENTION_MODEL, FAMILY_OF, OCR_GROUP_OF, baseCondition, type Family, type OcrGroup } from "./steps";
 
 // ---------- small statistics ----------
@@ -220,7 +221,32 @@ export async function loadResults(studyId?: string) {
     return { family: f, n: xs.length, agree: xs.filter((t) => (t.data as { type?: string }).type === t.block.className).length };
   });
 
+  // Pairs where the guide changed nothing: the two versions are the same text, so raters never see them.
+  const pairBlocks = await db.block.findMany({
+    where,
+    select: { className: true, candidates: { select: { condition: true, model: true, text: true } } },
+  });
+  const identical = { balloon: [0, 0], box: [0, 0], sfx: [0, 0], all: [0, 0] } as Record<Family | "all", [number, number]>;
+  for (const b of pairBlocks) {
+    const byModel = new Map<string, { g?: string; p?: string }>();
+    for (const c of b.candidates) {
+      if (c.model === ATTENTION_MODEL) continue;
+      const e = byModel.get(c.model ?? "") ?? {};
+      const base = baseCondition(c.condition);
+      if (base === "true_class") e.g = c.text;
+      if (base === "no_class") e.p = c.text;
+      byModel.set(c.model ?? "", e);
+    }
+    const fam = FAMILY_OF[b.className ?? ""];
+    for (const e of byModel.values()) {
+      if (e.g === undefined || e.p === undefined) continue;
+      const same = sameText(e.g, e.p) ? 1 : 0;
+      for (const k of [fam, "all"] as const) if (k) { identical[k][0] += same; identical[k][1] += 1; }
+    }
+  }
+
   return {
+    identical,
     study: groups(human),
     perModel,
     judges,

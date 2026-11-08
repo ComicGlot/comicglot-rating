@@ -11,10 +11,11 @@ function same(a: string, b: string): boolean {
   return x.length === y.length && timingSafeEqual(x, y);
 }
 
-export async function login(_: string | null, form: FormData): Promise<string | null> {
+// Returns an error code that the form shows in the rater's language.
+export async function login(_: "missing" | "wrong" | null, form: FormData): Promise<"missing" | "wrong" | null> {
   const username = String(form.get("username") ?? "").trim();
   const code = String(form.get("code") ?? "").trim();
-  if (!username || !code) return "Enter your name and access code.";
+  if (!username || !code) return "missing";
   const jar = await cookies();
 
   const adminUser = process.env.ADMIN_USERNAME, adminPass = process.env.ADMIN_PASSWORD;
@@ -24,7 +25,7 @@ export async function login(_: string | null, form: FormData): Promise<string | 
   }
 
   const rater = await db.rater.findUnique({ where: { username } });
-  if (!rater || !rater.active || !(await bcrypt.compare(code, rater.codeHash))) return "Name or access code not recognised.";
+  if (!rater || !rater.active || !(await bcrypt.compare(code, rater.codeHash))) return "wrong";
   jar.set(COOKIE, await signSession({ sub: rater.id, username, role: "rater" }), cookieOptions);
   redirect("/rate");
 }

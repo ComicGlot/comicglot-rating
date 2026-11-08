@@ -1,10 +1,10 @@
 import { db } from "./db";
 import { LETTERS, shuffled } from "./shuffle";
-import { effectiveSteps, type Step } from "./steps";
+import { ATTENTION_MODEL, effectiveSteps, type Step } from "./steps";
 
 export type Task = { chapterId: string; pageId: string; step: Step } | null;
 
-type PageInfo = { id: string; index: number; blocks: { candidates: { id: string; model: string | null }[] }[] };
+type PageInfo = { id: string; index: number; blocks: { candidates: Cand[] }[] };
 
 // Does this step have anything to do on this page?
 function applicable(step: Step, p: PageInfo): boolean {
@@ -15,12 +15,22 @@ function applicable(step: Step, p: PageInfo): boolean {
 
 // Candidates of a block are compared within groups of the same model: e.g. "guide" against "no_type"
 // from one model. A block can be compared when some group has two or more candidates.
-type Cand = { id: string; model: string | null };
+// A group whose versions are the same text is never shown: the only possible answer would be "equal",
+// and the share of such pairs (the guide changed nothing) is counted apart on the results page.
+// Attention checks are identical on purpose and are kept.
+export type Cand = { id: string; model: string | null; text?: string };
+export const sameText = (a: string, b: string) => a.replace(/\s+/g, " ").trim() === b.replace(/\s+/g, " ").trim();
 function groupsOf(cands: Cand[]): Map<string, string[]> {
-  const g = new Map<string, string[]>();
-  for (const c of cands) g.set(c.model ?? "", [...(g.get(c.model ?? "") ?? []), c.id]);
-  for (const [k, v] of g) if (v.length < 2) g.delete(k);
-  return g;
+  const g = new Map<string, Cand[]>();
+  for (const c of cands) g.set(c.model ?? "", [...(g.get(c.model ?? "") ?? []), c]);
+  const out = new Map<string, string[]>();
+  for (const [k, v] of g) {
+    if (v.length < 2) continue;
+    const identical = v.every((c) => c.text !== undefined && sameText(c.text, v[0].text!));
+    if (identical && k !== ATTENTION_MODEL) continue;
+    out.set(k, v.map((c) => c.id));
+  }
+  return out;
 }
 export function comparable(cands: Cand[]): boolean {
   return groupsOf(cands).size > 0;
@@ -49,7 +59,7 @@ export async function loadPlan(raterId: string, forAdmin = false) {
           study: true,
           pages: {
             orderBy: { index: "asc" },
-            select: { id: true, index: true, blocks: { select: { candidates: { select: { id: true, model: true } } } } },
+            select: { id: true, index: true, blocks: { select: { candidates: { select: { id: true, model: true, text: true } } } } },
           },
         },
       },

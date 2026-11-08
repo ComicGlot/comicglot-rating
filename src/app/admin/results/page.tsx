@@ -100,6 +100,7 @@ export default async function Results() {
         </div>
         {all.judgements === 0 ? <div className="empty">No translation judgements yet.</div> : <StudyTable rows={R.study} />}
         <p className="small muted" style={{ marginTop: 10, maxWidth: 820 }}>
+          {R.identical.all[1] > 0 && <>Identical versions (the guide changed nothing; not shown to raters): {(["balloon", "box", "sfx"] as const).map((f) => `${FAMILY_LABEL[f].toLowerCase()} ${R.identical[f][0]} of ${R.identical[f][1]}`).join(", ")}; all {R.identical.all[0]} of {R.identical.all[1]} pairs. </>}
           Shares are of all judgements by people (model judges are below). The sign test counts each text once, for the version most of its raters chose; texts where they split evenly are left out. {R.sourceWrong > 0 && <>Raters marked the Korean as wrong in {R.sourceWrong} judgements.</>}
         </p>
       </section>
