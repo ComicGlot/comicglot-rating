@@ -1,122 +1,144 @@
-import { requireAdmin } from "@/lib/auth";
+import Link from "next/link";
+import Icon from "@/components/Icon";
 import { db } from "@/lib/db";
 import { loadPlan } from "@/lib/flow";
-import { STEP_LABEL, STEP_ORDER } from "@/lib/steps";
-import { assignNew, setRaterSteps, toggleRater, toggleStudy, updateStudy } from "./actions";
-import GenerateForm from "./GenerateForm";
-import { CreateRaterForm, ResetCodeButton, StepBoxes } from "./RaterForms";
+import { ago, minutes } from "@/lib/format";
+import { STEP_LABEL, STEP_ORDER, STEP_SHORT } from "@/lib/steps";
 
 export const dynamic = "force-dynamic";
+export const metadata = { title: "Overview" };
 
-export default async function AdminPage() {
-  await requireAdmin();
-  const [studies, raters] = await Promise.all([
-    db.study.findMany({ orderBy: { createdAt: "asc" }, include: { chapters: { select: { id: true } } } }),
+export default async function Overview() {
+  const notPractice = { page: { chapter: { practice: false } } } as const;
+  const [studies, raters, judgements, transcribed, typed, confirmed, recent] = await Promise.all([
+    db.study.findMany({ orderBy: { createdAt: "asc" }, include: { _count: { select: { chapters: true } } } }),
     db.rater.findMany({ orderBy: { createdAt: "asc" } }),
+    db.response.count({ where: { step: "compare", block: notPractice } }),
+    db.response.groupBy({ by: ["blockId"], where: { step: "transcribe", block: notPractice } }).then((g) => g.length),
+    db.response.count({ where: { step: "types", block: notPractice } }),
+    db.pageDone.count({ where: { step: "review", page: { chapter: { practice: false } } } }),
+    db.pageDone.findMany({ orderBy: { createdAt: "desc" }, take: 8, include: { rater: { select: { username: true } }, page: { select: { index: true, chapter: { select: { title: true } } } } } }),
   ]);
-  const counts = await Promise.all(
-    studies.map(async (st) => ({
-      pages: await db.page.count({ where: { chapter: { studyId: st.id } } }),
-      blocks: await db.block.count({ where: { page: { chapter: { studyId: st.id } } } }),
-      conds: await db.candidate.groupBy({ by: ["condition"], where: { block: { page: { chapter: { studyId: st.id } } } }, _count: true }),
-    })),
-  );
-  const progress = await Promise.all(
-    raters.map(async (r) => {
+  const blocks = await db.block.count({ where: { page: { chapter: { practice: false, study: { active: true } } } } });
+
+  const people = await Promise.all(
+    raters.filter((r) => !r.username.startsWith("model:")).map(async (r) => {
       const plan = await loadPlan(r.id, true);
-      const per = Object.fromEntries(
-        STEP_ORDER.map((s) => {
-          const t = plan.flatMap((c) => c.todo.filter((x) => x.step === s));
-          return [s, t.length ? `${t.filter((x) => x.done).length}/${t.length}` : "—"];
-        }),
-      );
-      return { chapters: plan.length, per };
+      const per = STEP_ORDER.map((s) => {
+        const t = plan.flatMap((c) => c.todo.filter((x) => x.step === s));
+        return { step: s, done: t.filter((x) => x.done).length, all: t.length };
+      });
+      const all = per.reduce((n, x) => n + x.all, 0), done = per.reduce((n, x) => n + x.done, 0);
+      const last = await db.pageDone.findFirst({ where: { raterId: r.id }, orderBy: { updatedAt: "desc" }, select: { updatedAt: true } }).catch(() => null);
+      const time = await db.pageDone.aggregate({ where: { raterId: r.id }, _sum: { msSpent: true } });
+      return { r, per, all, done, last: last?.updatedAt ?? null, ms: time._sum.msSpent ?? 0 };
     }),
+  );
+  const studyStats = await Promise.all(
+    studies.map(async (st) => ({
+      st,
+      pages: await db.page.count({ where: { chapter: { studyId: st.id, practice: false } } }),
+      blocks: await db.block.count({ where: { page: { chapter: { studyId: st.id, practice: false } } } }),
+      cands: await db.candidate.count({ where: { block: { page: { chapter: { studyId: st.id } } } } }),
+    })),
   );
 
   return (
-    <main style={{ maxWidth: 1180 }}>
-      <div className="row" style={{ alignItems: "center", justifyContent: "space-between" }}>
-        <h1>Admin</h1>
-        <form action="/api/logout" method="post"><button className="secondary">Sign out</button></form>
+    <>
+      <div className="admhead">
+        <div>
+          <span className="label">Study</span>
+          <h1 className="h1" style={{ marginTop: 4 }}>Overview</h1>
+          <p className="muted">Practice sets are left out of every number here.</p>
+        </div>
+        <Link href="/admin/results" className="btn primary"><Icon name="chart" /> Results</Link>
       </div>
 
-      <h2>Studies</h2>
-      <div className="card">
-        {studies.length === 0 && (
-          <p className="muted">No study yet. Import one with <span className="code">npm run import -- data/round1.json</span>.</p>
-        )}
-        {studies.map((st, i) => (
-          <div key={st.id} className="study">
-            <div className="row" style={{ alignItems: "baseline", justifyContent: "space-between" }}>
-              <div>
-                <b>{st.name}</b> <span className="muted">· {st.active ? "open" : "closed"} · {st.chapters.length} chapters · {counts[i].pages} pages · {counts[i].blocks} blocks</span>
-                <div className="muted small">
-                  Candidates: {counts[i].conds.length ? counts[i].conds.map((c) => `${c.condition} ${c._count}`).join(", ") : "none"}
-                </div>
-              </div>
-              <form action={toggleStudy}>
-                <input type="hidden" name="studyId" value={st.id} />
-                <button className="secondary">{st.active ? "Close" : "Reopen"}</button>
-              </form>
-            </div>
-            <form action={updateStudy} className="row" style={{ alignItems: "center", gap: 12, marginTop: 6 }}>
-              <input type="hidden" name="studyId" value={st.id} />
-              <StepBoxes checked={st.steps} />
-              <label className="inline"><input type="checkbox" name="askOwn" defaultChecked={st.askOwnTranslation} /> ask for own translation first</label>
-              <input type="hidden" name="steps" value="review" />
-              <button className="secondary">Save steps</button>
-            </form>
+      <div className="grid4">
+        <div className="stat"><span className="label">Raters</span><div className="v">{people.filter((p) => p.r.active).length}<small> active</small></div><div className="d">{people.filter((p) => p.r.consentAt).length} have accepted the study information</div></div>
+        <div className="stat"><span className="label">Translation judgements</span><div className="v">{judgements}</div><div className="d">texts judged, all raters</div></div>
+        <div className="stat"><span className="label">Transcriptions</span><div className="v">{transcribed}<small> / {blocks}</small></div><div className="d">texts typed in Korean at least once{typed ? ` · ${typed} type labels` : ""}</div></div>
+        <div className="stat"><span className="label">Frames confirmed</span><div className="v">{confirmed}</div><div className="d">across all raters</div></div>
+      </div>
+
+      <div className="section">
+        <span className="label">Raters</span>
+        {people.length === 0 ? (
+          <div className="empty">No raters yet. <Link href="/admin/raters" style={{ textDecoration: "underline" }}>Add the first one</Link>.</div>
+        ) : (
+          <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+            <table className="t">
+              <thead>
+                <tr><th>Rater</th>{STEP_ORDER.map((s) => <th key={s}>{STEP_SHORT[s]}</th>)}<th className="r">Time</th><th className="r">Last active</th></tr>
+              </thead>
+              <tbody>
+                {people.map(({ r, per, ms, last }) => (
+                  <tr key={r.id} style={{ opacity: r.active ? 1 : 0.5 }}>
+                    <td>
+                      <div className="row" style={{ gap: 10, flexWrap: "nowrap" }}>
+                        <span className="avatar">{r.username.slice(0, 1)}</span>
+                        <div>
+                          <div>{r.username} {!r.consentAt && <span className="pill warn">not started</span>}{!r.active && <span className="pill">blocked</span>}</div>
+                          <div className="small faint">{r.note || (r.steps.length ? r.steps.map((x) => STEP_SHORT[x as keyof typeof STEP_SHORT]).join(", ") : "all steps")}</div>
+                        </div>
+                      </div>
+                    </td>
+                    {per.map((x) => (
+                      <td key={x.step} title={`${STEP_LABEL[x.step]}: ${x.done} of ${x.all}`}>
+                        {x.all ? (
+                          <div className="minibar" style={{ minWidth: 90 }}>
+                            <div className={`bar${x.done === x.all ? " ok" : ""}`}><i style={{ width: `${(100 * x.done) / x.all}%` }} /></div>
+                            <span className="small muted num">{x.done}/{x.all}</span>
+                          </div>
+                        ) : <span className="faint">–</span>}
+                      </td>
+                    ))}
+                    <td className="r num">{minutes(ms)}</td>
+                    <td className="r muted">{ago(last)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-        ))}
+        )}
       </div>
-      {studies.length > 0 && <GenerateForm studies={studies.map((s) => ({ id: s.id, name: s.name }))} />}
 
-      <h2>Raters</h2>
-      <CreateRaterForm />
-      <div className="card">
-        <table>
-          <thead>
-            <tr>
-              <th>Name</th><th>Steps</th><th>Chapters</th>
-              {STEP_ORDER.map((s) => <th key={s}>{STEP_LABEL[s]}</th>)}
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {raters.map((r, i) => (
-              <tr key={r.id} className={r.active ? "" : "muted"}>
-                <td>{r.username}<div className="muted small">{r.note}</div></td>
-                <td>
-                  <form action={setRaterSteps} className="row" style={{ gap: 6, alignItems: "center" }}>
-                    <input type="hidden" name="raterId" value={r.id} />
-                    <StepBoxes checked={r.steps} />
-                    <button className="secondary small">Set</button>
-                  </form>
-                </td>
-                <td>{progress[i].chapters}</td>
-                {STEP_ORDER.map((s) => <td key={s}>{progress[i].per[s]}</td>)}
-                <td>
-                  <div className="row" style={{ gap: 6 }}>
-                    <form action={toggleRater}><input type="hidden" name="raterId" value={r.id} /><button className="secondary">{r.active ? "Block" : "Unblock"}</button></form>
-                    <form action={assignNew}><input type="hidden" name="raterId" value={r.id} /><button className="secondary">Assign new chapters</button></form>
-                    <ResetCodeButton raterId={r.id} />
-                  </div>
-                </td>
-              </tr>
+      <div className="section grid2" style={{ alignItems: "start" }}>
+        <div>
+          <span className="label" style={{ display: "block", marginBottom: 12 }}>Studies</span>
+          <div className="stack" style={{ gap: 8 }}>
+            {studyStats.length === 0 && <div className="empty">No study yet. Import one with <span className="code">npm run import -- data/round1/chapters.json</span>.</div>}
+            {studyStats.map(({ st, pages, blocks, cands }) => (
+              <Link key={st.id} href="/admin/studies" className="card tight" style={{ display: "block" }}>
+                <div className="row between">
+                  <span className="h3">{st.name}</span>
+                  <span className={`pill${st.active ? " ok" : ""}`}>{st.active ? "open" : "closed"}</span>
+                </div>
+                <div className="small muted" style={{ marginTop: 6 }}>
+                  {st._count.chapters} sets · {pages} frames · {blocks} texts · {cands} translations · {st.steps.filter((x) => x !== "review").map((x) => STEP_SHORT[x as keyof typeof STEP_SHORT]).join(", ")}
+                </div>
+              </Link>
             ))}
-          </tbody>
-        </table>
+          </div>
+        </div>
+        <div>
+          <span className="label" style={{ display: "block", marginBottom: 12 }}>Recent activity</span>
+          <div className="card" style={{ padding: 0 }}>
+            {recent.length === 0 ? <div className="muted" style={{ padding: 16 }}>Nothing yet.</div> : (
+              <table className="t">
+                <tbody>
+                  {recent.map((d) => (
+                    <tr key={d.id}>
+                      <td><b>{d.rater.username}</b> <span className="muted">{d.step === "review" ? "confirmed" : `saved ${STEP_SHORT[d.step as keyof typeof STEP_SHORT]?.toLowerCase() ?? d.step} on`}</span> {d.page.chapter.title}, frame {d.page.index + 1}</td>
+                      <td className="r muted small">{ago(d.updatedAt)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
       </div>
-
-      <h2>Exports (CSV)</h2>
-      <div className="card row" style={{ gap: 8 }}>
-        {(["types", "transcribe", "compare", "pages"] as const).map((k) => (
-          <a key={k} href={`/api/admin/export?kind=${k}`}>
-            <button className="secondary">{k === "pages" ? "Pages and time" : STEP_LABEL[k]}</button>
-          </a>
-        ))}
-      </div>
-    </main>
+    </>
   );
 }

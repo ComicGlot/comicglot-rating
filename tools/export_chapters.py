@@ -7,6 +7,10 @@ Run it from the ComicGlot code repository's environment (it needs Pillow only):
         --calls study_round1/calls.jsonl --conditions true_class no_class \
         --readings ocr_systems.csv --study round1 --out data/round1
 
+With --practice N the first N sampled frames form a practice set (shown first, never exported or counted).
+With --attention N, N random blocks with a translation get an extra comparison of two identical texts
+(model "attention"); the expected answer is a tie, so it shows whether a rater reads both versions.
+
 With --per-type N it samples frames instead of whole chapters: frames are drawn at random, rarest
 type first, until every type has at least N blocks, then shuffled across series and grouped into sets
 of --set-size frames, which the app shows like chapters. Pass only runs of chapters the detector was
@@ -58,6 +62,9 @@ def main() -> None:
     ap.add_argument("--set-size", type=int, default=20, help="frames per set when sampling")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--skip-empty", action="store_true", help="leave out frames without blocks")
+    ap.add_argument("--practice", type=int, default=0, help="frames for a practice set (taken from the sample)")
+    ap.add_argument("--attention", type=int, default=0, help="blocks that get an attention check")
+    ap.add_argument("--intro", type=Path, help="text file shown on the welcome page")
     ap.add_argument("--max-width", type=int, default=900)
     ap.add_argument("--quality", type=int, default=85)
     ap.add_argument("--out", type=Path, required=True)
@@ -111,8 +118,11 @@ def main() -> None:
                 chosen.append(i)
                 have.update(b.get("class_name") for b in frames[i][2]["blocks"])
         rng.shuffle(chosen)
+        practice, chosen = chosen[:a.practice], chosen[a.practice:]
         groups = [(f"{a.study}-set{n // a.set_size + 1:02d}", f"Set {n // a.set_size + 1}", chosen[n:n + a.set_size])
                   for n in range(0, len(chosen), a.set_size)]
+        if practice:
+            groups.insert(0, (f"{a.study}-practice", "Practice", practice))
         short = {t: have[t] for t in types if have[t] < a.per_type}
         print("blocks per type:", dict(sorted(have.items(), key=lambda x: -x[1])))
         if short:
@@ -147,10 +157,21 @@ def main() -> None:
                           "width": im.width, "height": im.height, "blocks": out_blocks})
             n_blocks += len(out_blocks)
         n_pages += len(pages)
-        chapters.append({"id": cid, "title": title, "pages": pages})
+        chapters.append({"id": cid, "title": title, "practice": cid.endswith("-practice"), "pages": pages})
+
+    if a.attention:
+        rng = random.Random(a.seed + 1)
+        pool = [b for c in chapters if not c["practice"] for p in c["pages"] for b in p["blocks"] if b["candidates"]]
+        for b in rng.sample(pool, min(a.attention, len(pool))):
+            text = rng.choice(b["candidates"])["text"]
+            b["candidates"] += [{"condition": "check_a", "model": "attention", "text": text},
+                                {"condition": "check_b", "model": "attention", "text": text}]
+        print(f"attention checks on {min(a.attention, len(pool))} blocks")
 
     a.out.mkdir(parents=True, exist_ok=True)
     out = {"study": a.study, "steps": a.steps, "askOwnTranslation": not a.no_own, "guides": guides, "chapters": chapters}
+    if a.intro:
+        out["intro"] = a.intro.read_text(encoding="utf-8").strip()
     (a.out / "chapters.json").write_text(json.dumps(out, ensure_ascii=False, indent=1), encoding="utf-8")
     print(f"{len(chapters)} chapters, {n_pages} pages, {n_blocks} blocks, {n_cands} candidates -> {a.out / 'chapters.json'}")
 

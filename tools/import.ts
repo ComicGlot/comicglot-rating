@@ -3,9 +3,9 @@
 //   npm run import -- data/round1.json
 //
 // Format:
-//   { "study": "round1", "steps": ["types","transcribe","compare","review"], "askOwnTranslation": true,
+//   { "study": "round1", "steps": ["types","transcribe","compare","review"], "askOwnTranslation": true, "intro": "...",
 //     "guides": { "<type>": "<style guide>", "default": "..." },
-//     "chapters": [ { "id": "run12", "title": "Chapter 1", "pages": [
+//     "chapters": [ { "id": "run12", "title": "Chapter 1", "practice": false, "pages": [
 //        { "index": 0, "image_file": "run12/000.jpg" | "image_b64": "...", "image_mime": "image/jpeg", "width": 800, "height": 1600,
 //          "blocks": [ { "id": "run12/0/3", "order": 0, "box": [x0,y0,x1,y1], "class_name": "speech_bubble",
 //                        "source": "...", "readings": { "general": "...", "comic": "..." },
@@ -23,8 +23,8 @@ type InBlock = {
 };
 type InPage = { index: number; image_file?: string; image_b64?: string; image_mime?: string; width: number; height: number; blocks: InBlock[] };
 type InFile = {
-  study: string; steps?: string[]; askOwnTranslation?: boolean; guides?: Record<string, string>;
-  chapters: { id: string; title?: string; pages: InPage[] }[];
+  study: string; steps?: string[]; askOwnTranslation?: boolean; guides?: Record<string, string>; intro?: string;
+  chapters: { id: string; title?: string; practice?: boolean; pages: InPage[] }[];
 };
 
 const STEPS = ["types", "transcribe", "compare", "review"];
@@ -38,8 +38,8 @@ async function main() {
   const steps = STEPS.filter((s) => (data.steps ?? STEPS).includes(s) || s === "review");
   const study = await db.study.upsert({
     where: { name: data.study },
-    create: { name: data.study, steps, askOwnTranslation: data.askOwnTranslation ?? true, guides: data.guides ?? Prisma.JsonNull },
-    update: { ...(data.guides ? { guides: data.guides } : {}) },
+    create: { name: data.study, steps, askOwnTranslation: data.askOwnTranslation ?? true, guides: data.guides ?? Prisma.JsonNull, intro: data.intro ?? null },
+    update: { ...(data.guides ? { guides: data.guides } : {}), ...(data.intro ? { intro: data.intro } : {}) },
   });
   let pos = (await db.chapter.aggregate({ where: { studyId: study.id }, _max: { position: true } }))._max.position ?? -1;
   let newChapters = 0, newBlocks = 0, cands = 0;
@@ -47,7 +47,7 @@ async function main() {
   for (const ch of data.chapters) {
     const existing = await db.chapter.findUnique({ where: { studyId_externalId: { studyId: study.id, externalId: ch.id } } });
     if (!existing) {
-      const chapter = await db.chapter.create({ data: { studyId: study.id, externalId: ch.id, title: ch.title ?? ch.id, position: ++pos } });
+      const chapter = await db.chapter.create({ data: { studyId: study.id, externalId: ch.id, title: ch.title ?? ch.id, position: ++pos, practice: ch.practice ?? false } });
       for (const p of ch.pages) {
         const img = p.image_file ? readFileSync(resolve(base, p.image_file)) : Buffer.from(p.image_b64 ?? "", "base64");
         if (!img.length) throw new Error(`${ch.id} page ${p.index}: no image`);

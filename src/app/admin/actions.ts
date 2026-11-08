@@ -31,7 +31,7 @@ export async function createRater(_: CodeResult, form: FormData): Promise<CodeRe
     data: { username, note: note || null, steps: stepsFrom(form), codeHash: await bcrypt.hash(code, 10) },
   });
   const assigned = await assignChapters(rater.id);
-  revalidatePath("/admin");
+  revalidatePath("/admin", "layout");
   return { username, code, assigned };
 }
 
@@ -50,19 +50,19 @@ export async function toggleRater(form: FormData): Promise<void> {
   const id = String(form.get("raterId") ?? "");
   const r = await db.rater.findUnique({ where: { id } });
   if (r) await db.rater.update({ where: { id }, data: { active: !r.active } });
-  revalidatePath("/admin");
+  revalidatePath("/admin", "layout");
 }
 
 export async function setRaterSteps(form: FormData): Promise<void> {
   await requireAdmin();
   await db.rater.update({ where: { id: String(form.get("raterId") ?? "") }, data: { steps: stepsFrom(form) } });
-  revalidatePath("/admin");
+  revalidatePath("/admin", "layout");
 }
 
 export async function assignNew(form: FormData): Promise<void> {
   await requireAdmin();
   await assignChapters(String(form.get("raterId") ?? ""));
-  revalidatePath("/admin");
+  revalidatePath("/admin", "layout");
 }
 
 export async function toggleStudy(form: FormData): Promise<void> {
@@ -70,14 +70,18 @@ export async function toggleStudy(form: FormData): Promise<void> {
   const id = String(form.get("studyId") ?? "");
   const st = await db.study.findUnique({ where: { id } });
   if (st) await db.study.update({ where: { id }, data: { active: !st.active } });
-  revalidatePath("/admin");
+  revalidatePath("/admin", "layout");
 }
 
 export async function updateStudy(form: FormData): Promise<void> {
   await requireAdmin();
   await db.study.update({
     where: { id: String(form.get("studyId") ?? "") },
-    data: { steps: stepsFrom(form), askOwnTranslation: form.get("askOwn") === "on" },
+    data: {
+      steps: stepsFrom(form),
+      askOwnTranslation: form.get("askOwn") === "on",
+      ...(form.has("intro") ? { intro: String(form.get("intro") ?? "").trim() || null } : {}),
+    },
   });
-  revalidatePath("/admin");
+  revalidatePath("/admin", "layout");
 }

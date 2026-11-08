@@ -1,15 +1,20 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import TopNav from "@/components/TopNav";
+import GuideDrawer from "@/components/GuideDrawer";
 import { requireRater } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { canSeePage, loadPlan, nextTask, setsFor } from "@/lib/flow";
-import { STEP_HELP, STEP_LABEL, STEP_ORDER, type Step } from "@/lib/steps";
+import { STEP_LABEL, STEP_ORDER, type Step } from "@/lib/steps";
 import Workbench, { type WBBlock } from "./Workbench";
 
 export const dynamic = "force-dynamic";
+export const metadata = { title: "Frame" };
 
-export default async function Work({ searchParams }: { searchParams: Promise<{ page?: string; step?: string }> }) {
+export default async function Work({ searchParams }: { searchParams: Promise<{ page?: string; step?: string; saved?: string }> }) {
   const s = await requireRater();
+  const rater = await db.rater.findUnique({ where: { id: s.sub }, select: { consentAt: true } });
+  if (!rater?.consentAt) redirect("/rate/welcome");
   const q = await searchParams;
   let pageId = q.page, step = q.step as Step | undefined;
   if (!pageId || !step) {
@@ -27,9 +32,11 @@ export default async function Work({ searchParams }: { searchParams: Promise<{ p
       blocks: { orderBy: { order: "asc" }, include: { candidates: true } },
     },
   });
-  const plan = (await loadPlan(s.sub)).find((c) => c.chapter.id === page.chapterId)!;
-  if (!plan.steps.includes(step)) redirect("/rate");
-  const pageTodo = plan.todo.filter((t) => t.pageId === page.id);
+  const plan = await loadPlan(s.sub);
+  const chapterPlan = plan.find((c) => c.chapter.id === page.chapterId)!;
+  if (!chapterPlan.steps.includes(step)) redirect("/rate");
+  const pageTodo = chapterPlan.todo.filter((t) => t.pageId === page.id);
+  if (!pageTodo.some((t) => t.step === step)) redirect(pageTodo[0] ? `/rate/work?page=${page.id}&step=${pageTodo[0].step}` : "/rate");
   const responses = await db.response.findMany({ where: { raterId: s.sub, block: { pageId: page.id } } });
   const pageDone = await db.pageDone.findMany({ where: { raterId: s.sub, pageId: page.id } });
 
@@ -49,24 +56,26 @@ export default async function Work({ searchParams }: { searchParams: Promise<{ p
   });
 
   const typesDone = pageDone.find((d) => d.step === "types");
-  const doneTasks = plan.todo.filter((t) => t.done).length;
+  const all = plan.reduce((n, c) => n + c.todo.length, 0);
+  const done = plan.reduce((n, c) => n + c.todo.filter((t) => t.done).length, 0);
+  const framePos = chapterPlan.pages.findIndex((p) => p.id === page.id);
+  const pct = Math.round((100 * done) / Math.max(1, all));
+
   return (
-    <main style={{ maxWidth: 1280 }}>
-      <div className="row" style={{ alignItems: "center", justifyContent: "space-between" }}>
-        <div>
-          <Link href="/rate" className="muted">← Overview</Link>
-          <h1 style={{ marginTop: 4 }}>{page.chapter.title}: page {page.index + 1} of {plan.pages.length}</h1>
-        </div>
-        <div className="muted">{doneTasks} of {plan.todo.length} tasks done in this chapter</div>
-      </div>
-      <div className="row" style={{ gap: 6, marginBottom: 8 }}>
-        {pageTodo.map((t) => (
-          <Link key={t.step} href={`/rate/work?page=${page.id}&step=${t.step}`}>
-            <button className={t.step === step ? "" : "secondary"}>{STEP_LABEL[t.step]}{t.done ? " ✓" : ""}</button>
-          </Link>
-        ))}
-      </div>
-      <p className="muted">{STEP_HELP[step]}</p>
+    <>
+      <TopNav
+        home="/rate"
+        user={s.username}
+        crumbs={[{ label: "Your frames", href: "/rate" }, { label: page.chapter.title, href: "/rate" }, { label: `Frame ${framePos + 1} of ${chapterPlan.pages.length}`, strong: true }]}
+        right={<GuideDrawer steps={chapterPlan.steps} />}
+      >
+        {page.chapter.practice && <span className="pill violet">Practice</span>}
+        <span style={{ flex: 1 }} />
+        <Link href="/rate" className="minibar" title={`${done} of ${all} tasks done`} style={{ minWidth: 160 }}>
+          <span className="small muted num">{pct}%</span>
+          <div className="bar"><i style={{ width: `${pct}%` }} /></div>
+        </Link>
+      </TopNav>
       <Workbench
         key={`${page.id}:${step}`}
         pageId={page.id}
@@ -77,8 +86,10 @@ export default async function Work({ searchParams }: { searchParams: Promise<{ p
         askOwn={page.chapter.study.askOwnTranslation}
         missing={typesDone?.missing ?? false}
         pageNote={typesDone?.note ?? ""}
+        tabs={pageTodo.map((t) => ({ step: t.step, done: t.done }))}
         reviewSteps={pageTodo.map((t) => t.step).filter((x) => x !== "review")}
+        saved={q.saved ? (q.saved === "review" ? "Frame confirmed" : `${STEP_LABEL[q.saved as Step] ?? "Step"} saved`) : undefined}
       />
-    </main>
+    </>
   );
 }

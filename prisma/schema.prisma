@@ -19,6 +19,7 @@ model Rater {
   // Empty means every step of the study.
   steps       String[]
   createdAt   DateTime            @default(now())
+  consentAt   DateTime?           // when the rater accepted the study information
   assignments ChapterAssignment[]
   responses   Response[]
   done        PageDone[]
@@ -32,6 +33,7 @@ model Study {
   steps             String[]  // subset of: types, transcribe, compare, review (review is always last)
   askOwnTranslation Boolean   @default(true)
   guides            Json?     // type -> style guide text, from ComicGlot data/prompts/style_guides.json
+  intro             String?   // shown on the welcome page before the first frame (plain text, blank lines split paragraphs)
   createdAt         DateTime  @default(now())
   chapters          Chapter[]
 }
@@ -43,6 +45,7 @@ model Chapter {
   externalId  String              // pipeline run name
   title       String
   position    Int
+  practice    Boolean             @default(false) // a practice set: shown first, left out of exports and results
   pages       Page[]
   assignments ChapterAssignment[]
 
@@ -139,6 +142,7 @@ model PageDone {
   note      String?
   msSpent   Int?
   createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
 
   @@unique([raterId, pageId, step])
 }

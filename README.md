@@ -6,10 +6,27 @@ Web app for the studies of the ComicGlot paper. Each rater signs in with a name 
 | --- | --- | --- |
 | Text types | Chooses the type of every numbered box, without seeing the detector's type; flags text that has no box. | Agreement of people with the detector's types on unseen chapters; missed text. |
 | Transcription | Types the Korean of every box from the crop, or marks it unreadable. Model readings are never shown. | Ground truth for the character error rate of every OCR system (`tab:cer`). |
-| Translations | May write an own translation first (then locked), sees the Korean and two unlabelled English versions per comparison, picks the better or a tie and marks tone that fits, is added, or is overdone. | The blind study of the type's guide against no type (`tab:study`), and the same for other models (`tab:models`). |
-| Check the page | Sees everything entered on the page, can go back to any step, and confirms the page. Changing a step later asks for a new confirmation. | Completeness. |
+| Translations | May write an own translation first (then locked), sees the Korean and two unlabelled English versions per comparison, picks the better or a tie, marks tone that fits, is added, or is overdone, and can flag a Korean source that looks misread. | The blind study of the type's guide against no type (`tab:study`), and the same for other models (`tab:models`). |
+| Check the frame | Sees everything entered on the frame, can go back to any step, and confirms the frame once every step is done. Changing a step later asks for a new confirmation. | Completeness. |
 
-A study chooses which steps it uses; a rater can be limited to some of them (a Korean reader does types and transcription, a translator does translations). The admin panel creates raters with one-time codes, sets steps, shows progress per step, generates more candidate translations through OpenRouter, and exports one CSV per step with letters mapped back to conditions.
+A study chooses which steps it uses; a rater can be limited to some of them (a Korean reader does transcription, a translator does translations).
+
+### For raters
+
+- A welcome page before the first frame: what the study is, the steps this person does, a time estimate, how their data is used, and a consent box (stored as `Rater.consentAt`). The text above the steps is the study's `intro`, editable in the admin panel.
+- An optional practice set, shown first and left out of every export and result.
+- The work screen: the frame on the left (zoom, focus on the active box), one text at a time on the right with a zoomed crop, and the steps as tabs. Shortcuts: `J`/`K` next and previous text, `1`–`0` types, `A`/`B`/`T` choices, `Ctrl+Enter` next text or save, `?` the guide.
+- Drafts are kept in the browser until the frame is saved, so a reload or a lost connection loses nothing.
+- Time is recorded per text (`ms` in each answer) as well as per frame.
+- Light and dark themes; the layout works down to phone width, although desktop is the intended setting.
+
+### For the admin
+
+- Overview: raters, progress per step, time, last activity.
+- Results: a live preview of `tab:study` (guide against no type by family, ties, overdone tone, Krippendorff's alpha, a sign test on texts), the per-model column of `tab:models`, model judges reported apart, attention checks, `tab:cer` against the transcriptions, and agreement with the detector's types. The paper's numbers come from the exports and the analysis scripts.
+- Raters: presets for a Korean reader and a translator, one-time codes with a copyable invitation, steps per person, block and unblock.
+- Studies: steps, own-translation setting, welcome text, translations per model and condition, and generation of more translations through OpenRouter.
+- Exports: one CSV per step, unblinded, practice left out, with `rater_kind` (person or model), attention checks, the source flag and time per text.
 
 Stack: Next.js 15 (App Router) on Vercel, Postgres through Prisma (Vercel Postgres / Neon), a signed cookie for sessions, OpenRouter for model calls from the admin side.
 
@@ -41,6 +58,7 @@ python tools/export_chapters.py --project-root ../ComicGlot \
 npm run import -- data/round1/chapters.json
 ```
 
+- `--practice N` puts the first N sampled frames in a practice set; `--attention N` adds to N texts a comparison of two identical versions (expected answer: a tie); `--intro FILE` sets the welcome text.
 - `--per-type 40` draws single frames, rarest type first, until every type has at least 40 blocks, and groups them into shuffled sets of 20 frames from many series; the app shows each set like a chapter. Pass only runs of chapters the detector was not trained on. Without it, every run becomes one chapter.
 - The transcription export has `block_uid` and `gt_text` columns (`#ILLEGIBLE` for unreadable blocks), so it is the `--gt` file of `ComicGlot/eval/ocr_eval.py` as it is.
 - `--readings` takes CSV files with a `block_uid` column and one column per OCR system; they appear as `reading:<name>` columns in the transcription export next to the rater's text.
@@ -59,12 +77,19 @@ npm run import -- data/round1/chapters.json
 
 ## Tested
 
-On a local Postgres with a synthetic two-page chapter (`next build`, then a Playwright run): admin login, a rater with a one-time code, all four steps on both pages with the own translation locked once the candidates are shown, a page without boxes skipped, the overview at 100%, raters kept out of the admin export, and the four CSV exports with letters mapped back to conditions. The OpenRouter call itself was not run (no key in the test environment).
+8 November 2026, on a local Postgres with frames from the two published chapters (`next build`, then Playwright driving Chrome): sign-in, the welcome page and consent, a Korean reader transcribing a practice frame and a real frame with the keyboard, confirming a frame, a translator writing an own translation, revealing the versions and choosing with `A`, `T` and `Ctrl+Enter`, a draft restored after a reload, every admin page, and the results page on simulated answers. The checks found no browser errors. Earlier (4 November): the four CSV exports with letters mapped back to conditions, and raters kept out of the admin export. The OpenRouter call itself has not been run.
+
+## Run locally
+
+With PostgreSQL installed (or any Postgres you can reach), put local values in `.env.local` (git-ignored; Next.js prefers it to `.env`) and pass the same URLs to the Prisma commands:
+
+```bash
+DATABASE_URL=postgresql://postgres@localhost:5433/comicglot_rating DIRECT_URL=postgresql://postgres@localhost:5433/comicglot_rating npx prisma db push
+npm run dev
+```
 
 ## Next steps
 
-- An instructions and consent page before the first page, and a short practice chapter.
-- Attention checks (a comparison whose two versions are identical).
-- Agreement (Krippendorff's alpha) and the sign test in the admin view, matching `analyse_ratings.py`.
+- A model judge: the same blind pairs sent to a language model and stored as a rater named `model:<slug>`, so the export and the results page treat it like a person and report it apart.
 - Images in Vercel Blob instead of the database if the study grows past a few dozen chapters.
 - Rate limiting on the login route.

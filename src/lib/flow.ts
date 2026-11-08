@@ -58,6 +58,8 @@ export async function loadPlan(raterId: string, forAdmin = false) {
   const done = new Set(
     (await db.pageDone.findMany({ where: { raterId }, select: { pageId: true, step: true } })).map((d) => `${d.pageId}:${d.step}`),
   );
+  // Practice sets come first, whatever their position.
+  assignments.sort((a, b) => Number(b.chapter.practice) - Number(a.chapter.practice) || a.position - b.position);
   return assignments.map((a) => {
     const steps = effectiveSteps(a.chapter.study.steps, rater.steps);
     const pages: PageInfo[] = a.chapter.pages;
