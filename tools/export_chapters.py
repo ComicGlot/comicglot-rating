@@ -7,6 +7,10 @@ Run it from the ComicGlot code repository's environment (it needs Pillow only):
         --calls study_round1/calls.jsonl --conditions true_class no_class \
         --readings ocr_systems.csv --study round1 --out data/round1
 
+With --sample sample.json (from ComicGlot eval/sample_frames.py) it takes exactly the frames of that
+sample, in its order, and its practice frames; this is how the study is exported, so every test uses
+the same frames.
+
 With --practice N the first N sampled frames form a practice set (shown first, never exported or counted).
 With --attention N, N random blocks with a translation get an extra comparison of two identical texts
 (model "attention"); the expected answer is a tie, so it shows whether a rater reads both versions.
@@ -62,6 +66,7 @@ def main() -> None:
     ap.add_argument("--set-size", type=int, default=20, help="frames per set when sampling")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--skip-empty", action="store_true", help="leave out frames without blocks")
+    ap.add_argument("--sample", type=Path, help="sample.json of eval/sample_frames.py: export exactly these frames")
     ap.add_argument("--practice", type=int, default=0, help="frames for a practice set (taken from the sample)")
     ap.add_argument("--attention", type=int, default=0, help="blocks that get an attention check")
     ap.add_argument("--intro", type=Path, help="text file shown on the welcome page")
@@ -101,12 +106,26 @@ def main() -> None:
             continue
         keys = []
         for k, frame in enumerate(data.get("frames", [])):
-            if lo <= k <= hi and (frame.get("blocks") or not (a.skip_empty or a.per_type)):
+            if lo <= k <= hi and (frame.get("blocks") or not (a.skip_empty or a.per_type or a.sample)):
                 frames.append((run, k, frame))
                 keys.append(len(frames) - 1)
         groups.append((run, f"Chapter {len(groups) + 1}", keys))
 
-    if a.per_type:
+    if a.sample:
+        smp = json.loads(a.sample.read_text(encoding="utf-8"))
+        where = {(run, k): i for i, (run, k, _) in enumerate(frames)}
+        def keys(lst):
+            missing = [(f["run"], f["frame_index"]) for f in lst if (f["run"], f["frame_index"]) not in where]
+            if missing:
+                raise SystemExit(f"{len(missing)} sample frames are not in --runs, e.g. {missing[:3]}")
+            return [where[(f["run"], f["frame_index"])] for f in lst]
+        chosen, practice = keys(smp["frames"]), keys(smp.get("practice", []))
+        groups = [(f"{a.study}-set{n // a.set_size + 1:02d}", f"Set {n // a.set_size + 1}", chosen[n:n + a.set_size])
+                  for n in range(0, len(chosen), a.set_size)]
+        if practice:
+            groups.insert(0, (f"{a.study}-practice", "Practice", practice))
+        print(f"sample: {len(chosen)} frames, {len(practice)} practice")
+    elif a.per_type:
         rng = random.Random(a.seed)
         types = Counter(b.get("class_name") for _, _, f in frames for b in f["blocks"])
         have, chosen = Counter(), []
@@ -153,7 +172,7 @@ def main() -> None:
                 })
                 n_cands += len(cands.get(uid, []))
             # In a sampled set the page index is the position in the set; the frame is named by its blocks' ids.
-            pages.append({"index": pos if a.per_type else k, "image_file": rel.as_posix(), "image_mime": "image/jpeg",
+            pages.append({"index": pos if (a.per_type or a.sample) else k, "image_file": rel.as_posix(), "image_mime": "image/jpeg",
                           "width": im.width, "height": im.height, "blocks": out_blocks})
             n_blocks += len(out_blocks)
         n_pages += len(pages)

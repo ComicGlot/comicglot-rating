@@ -58,6 +58,7 @@ python tools/export_chapters.py --project-root ../ComicGlot \
 npm run import -- data/round1/chapters.json
 ```
 
+- `--sample sample.json` (from ComicGlot `eval/sample_frames.py`) exports exactly the frames and practice frames of the study sample, so every test uses the same frames. This is how the study is exported.
 - `--practice N` puts the first N sampled frames in a practice set; `--attention N` adds to N texts a comparison of two identical versions (expected answer: a tie); `--intro FILE` sets the welcome text.
 - `--per-type 40` draws single frames, rarest type first, until every type has at least 40 blocks, and groups them into shuffled sets of 20 frames from many series; the app shows each set like a chapter. Pass only runs of chapters the detector was not trained on. Without it, every run becomes one chapter.
 - The transcription export has `block_uid` and `gt_text` columns (`#ILLEGIBLE` for unreadable blocks), so it is the `--gt` file of `ComicGlot/eval/ocr_eval.py` as it is.
@@ -88,8 +89,11 @@ DATABASE_URL=postgresql://postgres@localhost:5433/comicglot_rating DIRECT_URL=po
 npm run dev
 ```
 
+## Model judge
+
+"Judge with a model" on the Studies page sends every blind pair of a study to a language model through OpenRouter, with the same random letters a person would get (shuffled from the judge's own rater id). The judge sees the Korean, the two versions and, by default, the frame with the text's box given as coordinates; it is never told the type. Its answers are stored as the rater `model:<id>` (blocked, so it cannot sign in) and reported apart from people on the results page, in the exports (`rater_kind = model`) and by `analyse_pairs.py`. Use a model that did not write the translations.
+
 ## Next steps
 
-- A model judge: the same blind pairs sent to a language model and stored as a rater named `model:<slug>`, so the export and the results page treat it like a person and report it apart.
 - Images in Vercel Blob instead of the database if the study grows past a few dozen chapters.
 - Rate limiting on the login route.

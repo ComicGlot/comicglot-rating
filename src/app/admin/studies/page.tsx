@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { baseCondition } from "@/lib/steps";
 import { toggleStudy, updateStudy } from "../actions";
 import GenerateForm from "../GenerateForm";
+import JudgeForm from "../JudgeForm";
 import { StepBoxes } from "../RaterForms";
 
 export const dynamic = "force-dynamic";
@@ -82,6 +83,11 @@ export default async function Studies() {
       {studies.length > 0 && (
         <div className="section">
           <GenerateForm studies={studies.map((s) => ({ id: s.id, name: s.name }))} />
+        </div>
+      )}
+      {studies.length > 0 && (
+        <div className="section">
+          <JudgeForm studies={studies.map((s) => ({ id: s.id, name: s.name }))} />
         </div>
       )}
     </>

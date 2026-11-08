@@ -44,7 +44,7 @@ export default async function Raters() {
                 </div>
                 <div className="row" style={{ gap: 6, justifyContent: "flex-end" }}>
                   <form action={assignNew}><input type="hidden" name="raterId" value={r.id} /><button className="btn sm" title="Give this rater sets imported after they were created">Assign new sets</button></form>
-                  <ResetCodeButton raterId={r.id} />
+                  {!r.username.startsWith("model:") && <ResetCodeButton raterId={r.id} />}
                   <form action={toggleRater}><input type="hidden" name="raterId" value={r.id} /><button className={`btn sm${r.active ? " danger" : ""}`}>{r.active ? "Block" : "Unblock"}</button></form>
                 </div>
               </div>
