@@ -11,6 +11,10 @@ const de: Messages = {
     darkTheme: "Dunkles Design",
   },
   login: {
+    key: "Zugangsschlüssel",
+    keySubtitle: "Geben Sie den Zugangsschlüssel ein, den Sie erhalten haben.",
+    keyMissing: "Geben Sie Ihren Zugangsschlüssel ein.",
+    keyWrong: "Dieser Schlüssel ist unbekannt oder wurde bereits verwendet.",
     title: "ComicGlot – Bewertung",
     subtitle: "Melden Sie sich mit dem Namen und dem Zugangscode an, die Sie erhalten haben.",
     name: "Name",
@@ -54,6 +58,7 @@ const de: Messages = {
     guideAgain: "Drücken Sie auf jedem Panel {key}, um die Anleitung erneut zu sehen.",
   },
   home: {
+    yourKey: "Ihr persönlicher Schlüssel lautet {key}. Bewahren Sie ihn auf: Damit kehren Sie auf jedem Gerät zu Ihren Antworten zurück.",
     setN: "Satz {n}",
     title: "Ihre Panels",
     ready: "Bereit, wenn Sie es sind",

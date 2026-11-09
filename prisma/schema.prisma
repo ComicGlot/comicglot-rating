@@ -12,7 +12,12 @@ datasource db {
 model Rater {
   id          String              @id @default(cuid())
   username    String              @unique
-  codeHash    String
+  codeHash    String?             // older name-and-code sign-in; raters now enter with a key
+  accessKey   String?             @unique // the word this person signs in with (their one-time token, or a personal key)
+  role        String              @default("translator") // translator | transcriber | tester (testers are left out of results)
+  tokenId     String?
+  token       AccessToken?        @relation(fields: [tokenId], references: [id], onDelete: SetNull)
+  studyId     String?             // sets only from this study (from the token); null: every open study
   active      Boolean             @default(true)
   note        String?
   // Steps this person does, e.g. ["types","transcribe"] for a Korean reader, ["compare"] for a translator.
@@ -36,6 +41,24 @@ model Study {
   intro             String?   // shown on the welcome page before the first frame (plain text, blank lines split paragraphs)
   createdAt         DateTime  @default(now())
   chapters          Chapter[]
+  tokens            AccessToken[]
+}
+
+// An invitation word handed out by the admin. Entering it creates a rater with these settings.
+model AccessToken {
+  id        String    @id @default(cuid())
+  token     String    @unique
+  label     String?
+  role      String    @default("translator")
+  steps     String[]  // empty: every step of the study
+  studyId   String?
+  study     Study?    @relation(fields: [studyId], references: [id], onDelete: SetNull)
+  maxUses   Int?      // 1: one person; null: no limit
+  uses      Int       @default(0)
+  active    Boolean   @default(true)
+  expiresAt DateTime?
+  createdAt DateTime  @default(now())
+  raters    Rater[]
 }
 
 model Chapter {

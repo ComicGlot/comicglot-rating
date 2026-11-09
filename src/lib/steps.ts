@@ -76,7 +76,7 @@ export const FAMILY_OF: Record<string, Family> = {
 export type Family = "balloon" | "box" | "sfx";
 export const FAMILY_LABEL: Record<Family, string> = { balloon: "Outlined balloons", box: "Boxes and free text", sfx: "Sound effects" };
 
-// The four groups of the recognition table (tab:cer).
+// The four groups of the recognition table (the recognition table).
 export type OcrGroup = "balloon" | "boxsys" | "free" | "sfx";
 export const OCR_GROUP_OF: Record<string, OcrGroup> = {
   speech_bubble: "balloon", think_bubble: "balloon", cloud_bubble: "balloon", wiggle_bubble: "balloon",

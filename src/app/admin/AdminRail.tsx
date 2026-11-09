@@ -5,7 +5,7 @@ import Icon from "@/components/Icon";
 
 const LINKS = [
   { section: "Study", items: [["/admin", "Overview", "home"], ["/admin/results", "Results", "chart"]] },
-  { section: "Manage", items: [["/admin/raters", "Raters", "users"], ["/admin/studies", "Studies", "layers"], ["/admin/exports", "Exports", "download"]] },
+  { section: "Manage", items: [["/admin/tokens", "Access keys", "copy"], ["/admin/raters", "Raters", "users"], ["/admin/studies", "Studies", "layers"], ["/admin/exports", "Exports", "download"]] },
 ] as const;
 
 export default function AdminRail() {

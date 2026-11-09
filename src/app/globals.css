@@ -152,6 +152,7 @@ hr.rule { border: 0; border-top: 1px solid var(--hairline); margin: var(--s-5) 0
 .btn.sm { height: 28px; padding: 0 10px; font-size: 12px; border-radius: var(--r-md); }
 .btn.icon { width: 32px; padding: 0; }
 .btn.danger { color: var(--bad); }
+.btn.armed, .btn.danger.armed { background: var(--bad); color: #fff; border-color: transparent; transition: none; }
 .btn .kbd { margin-left: 2px; }
 .btn.primary .kbd { background: rgba(255,255,255,.14); border-color: rgba(255,255,255,.22); color: inherit; }
 
@@ -184,7 +185,7 @@ hr.rule { border: 0; border-top: 1px solid var(--hairline); margin: var(--s-5) 0
 
 .field { display: flex; flex-direction: column; gap: 6px; }
 .field > span { font-size: 12px; color: var(--ink-muted); }
-.input, input[type=text], input[type=password], input[type=search], select, textarea {
+.input, input[type=text], input[type=number], input[type=password], input[type=search], select, textarea {
   width: 100%; min-height: 40px; padding: 9px 12px; border-radius: var(--r-md);
   border: 1px solid var(--hairline); background: var(--canvas); color: var(--ink);
   font: 400 14px/20px var(--font); transition: border-color .12s, box-shadow .12s;

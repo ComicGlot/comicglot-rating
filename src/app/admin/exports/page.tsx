@@ -9,13 +9,13 @@ const EXPORTS = [
     kind: "compare",
     title: "Translations",
     what: "One row per comparison: which condition each letter was, the choice, the tone marks, attention checks, the rater's own English.",
-    feeds: "tab:study and the last column of tab:models (pairwise analysis in eval/translation_study).",
+    feeds: "the translation study table and the last column of the per-model table (pairwise analysis in eval/translation_study).",
   },
   {
     kind: "transcribe",
     title: "Transcriptions",
     what: "The rater's Korean as gt_text (#ILLEGIBLE when unreadable) next to every stored reading (reading:<system>).",
-    feeds: "tab:cer: it is the --gt file of eval/ocr_eval.py as it is.",
+    feeds: "the recognition table: it is the --gt file of eval/ocr_eval.py as it is.",
   },
   {
     kind: "types",

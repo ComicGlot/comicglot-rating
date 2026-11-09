@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { baseCondition } from "@/lib/steps";
-import { toggleStudy, updateStudy } from "../actions";
+import ConfirmButton from "@/components/ConfirmButton";
+import { clearStudyAnswers, deleteStudy, toggleStudy, updateStudy } from "../actions";
 import GenerateForm from "../GenerateForm";
 import JudgeForm from "../JudgeForm";
 import { StepBoxes } from "../RaterForms";
@@ -37,10 +38,14 @@ export default async function Studies() {
                 <h2 className="h2">{st.name}</h2>
                 <span className={`pill${st.active ? " ok" : ""}`}>{st.active ? "open" : "closed"}</span>
               </div>
-              <form action={toggleStudy}>
-                <input type="hidden" name="studyId" value={st.id} />
-                <button className="btn sm">{st.active ? "Close the study" : "Reopen"}</button>
-              </form>
+              <div className="row" style={{ gap: 6 }}>
+                <form action={toggleStudy}>
+                  <input type="hidden" name="studyId" value={st.id} />
+                  <button className="btn sm">{st.active ? "Close the study" : "Reopen"}</button>
+                </form>
+                <form action={clearStudyAnswers}><input type="hidden" name="studyId" value={st.id} /><ConfirmButton confirm="Delete every answer in it?">Clear answers</ConfirmButton></form>
+                <form action={deleteStudy}><input type="hidden" name="studyId" value={st.id} /><ConfirmButton confirm="Delete study, frames and answers?">Delete</ConfirmButton></form>
+              </div>
             </div>
             <div className="small muted" style={{ marginTop: 6 }}>
               {st.chapters.length} sets · {st.chapters.reduce((n, c) => n + c._count.pages, 0)} frames · {info[i].blocks} texts · {st.chapters.filter((c) => c.practice).length} practice

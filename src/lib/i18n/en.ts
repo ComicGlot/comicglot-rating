@@ -13,6 +13,10 @@ const en = {
     darkTheme: "Dark theme",
   },
   login: {
+    key: "Access key",
+    keySubtitle: "Enter the access key you were given.",
+    keyMissing: "Enter your access key.",
+    keyWrong: "This key is not recognised, or it has already been used.",
     title: "ComicGlot rating",
     subtitle: "Sign in with the name and access code you were given.",
     name: "Name",
@@ -56,6 +60,7 @@ const en = {
     guideAgain: "Press {key} on any frame to see the guide again.",
   },
   home: {
+    yourKey: "Your personal key is {key}. Keep it: it brings you back to your answers on any device.",
     setN: "Set {n}",
     title: "Your frames",
     ready: "Ready when you are",

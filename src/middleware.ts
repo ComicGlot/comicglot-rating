@@ -1,13 +1,14 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { COOKIE, verifySession } from "@/lib/session";
 
-// Everything except the login page needs a valid session; /admin needs the admin role.
+// Raters need a session for /rate; /admin (except its sign-in page) and /api/admin need the admin role.
 export async function middleware(req: NextRequest) {
-  const s = await verifySession(req.cookies.get(COOKIE)?.value);
   const p = req.nextUrl.pathname;
-  const isAdminPath = p.startsWith("/admin") || p.startsWith("/api/admin");
+  if (p === "/admin/login") return NextResponse.next();
+  const s = await verifySession(req.cookies.get(COOKIE)?.value);
+  if (p.startsWith("/api/admin")) return s?.role === "admin" ? NextResponse.next() : new NextResponse("Forbidden", { status: 403 });
+  if (p.startsWith("/admin")) return s?.role === "admin" ? NextResponse.next() : NextResponse.redirect(new URL("/admin/login", req.url));
   if (!s) return NextResponse.redirect(new URL("/login", req.url));
-  if (isAdminPath && s.role !== "admin") return NextResponse.redirect(new URL("/rate", req.url));
   return NextResponse.next();
 }
 

@@ -11,6 +11,10 @@ const fr: Messages = {
     darkTheme: "Thème sombre",
   },
   login: {
+    key: "Clé d'accès",
+    keySubtitle: "Saisissez la clé d'accès que vous avez reçue.",
+    keyMissing: "Saisissez votre clé d'accès.",
+    keyWrong: "Cette clé n'est pas reconnue ou a déjà été utilisée.",
     title: "ComicGlot – évaluation",
     subtitle: "Connectez-vous avec le nom et le code d’accès qui vous ont été remis.",
     name: "Nom",
@@ -54,6 +58,7 @@ const fr: Messages = {
     guideAgain: "Appuyez sur {key} sur n’importe quelle case pour revoir le guide.",
   },
   home: {
+    yourKey: "Votre clé personnelle est {key}. Conservez-la : elle vous ramène à vos réponses sur n'importe quel appareil.",
     setN: "Série {n}",
     title: "Vos cases",
     ready: "Quand vous voulez",

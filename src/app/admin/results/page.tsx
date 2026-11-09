@@ -91,7 +91,7 @@ export default async function Results() {
 
       <section className="section">
         <div className="row between" style={{ marginBottom: 12 }}>
-          <span className="label">Translations: the type&apos;s guide against no type (tab:study)</span>
+          <span className="label">Translations: the type&apos;s guide against no type</span>
           <span className="row" style={{ gap: 12 }}>
             <span className="legend"><i style={{ background: "var(--graphite)" }} />guide</span>
             <span className="legend"><i style={{ background: "var(--silver)" }} />tie</span>
@@ -107,7 +107,7 @@ export default async function Results() {
 
       {R.perModel.length > 0 && (
         <section className="section">
-          <span className="label">Per translation model (tab:models, last column)</span>
+          <span className="label">Per translation model (last column of the per-model table)</span>
           <div className="card" style={{ padding: 0, overflow: "auto" }}>
             <table className="t">
               <thead><tr><th>Model</th><th className="r">Judgements</th><th>Split</th><th className="r">Guide preferred</th><th className="r">Overdone (guide)</th><th className="r">Sign test p</th></tr></thead>
@@ -143,7 +143,7 @@ export default async function Results() {
       )}
 
       <section className="section">
-        <span className="label">Recognition: character error rate against the transcriptions (tab:cer)</span>
+        <span className="label">Recognition: character error rate against the transcriptions</span>
         {R.transcribed === 0 ? (
           <div className="empty">No transcriptions yet.</div>
         ) : (

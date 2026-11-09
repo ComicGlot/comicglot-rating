@@ -52,7 +52,7 @@ export default function GenerateForm({ studies }: { studies: { id: string; name:
       </p>
       <div className="grid2" style={{ marginTop: 12 }}>
         <label className="field"><span>Study</span><select name="studyId">{studies.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></label>
-        <label className="field"><span>OpenRouter model id</span><input type="text" name="model" placeholder="e.g. anthropic/claude-sonnet-4.5" required /></label>
+        <label className="field"><span>OpenRouter model id</span><input type="text" name="model" placeholder="e.g. anthropic/claude-sonnet-5.5" required /></label>
       </div>
       <div className="row" style={{ gap: 6, marginTop: 14 }}>
         {CONDS.map(([v, l], i) => (

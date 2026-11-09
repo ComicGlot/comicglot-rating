@@ -17,7 +17,7 @@ export const metadata = { title: "Your frames" };
 export default async function RateHome() {
   const s = await requireRater();
   const { locale, m } = await getMessages();
-  const rater = await db.rater.findUnique({ where: { id: s.sub }, select: { consentAt: true } });
+  const rater = await db.rater.findUnique({ where: { id: s.sub }, select: { consentAt: true, accessKey: true } });
   if (!rater?.consentAt) redirect("/rate/welcome");
   const plan = await loadPlan(s.sub);
   const total = plan.reduce((n, c) => n + c.todo.length, 0);
@@ -57,6 +57,11 @@ export default async function RateHome() {
                   <p className="read muted" style={{ fontSize: 15, maxWidth: 540 }}>
                     {done < total ? (next?.chapter.chapter.practice ? m.home.practiceFirst : m.home.savedAsYouGo) : m.home.allConfirmed}
                   </p>
+                  {rater.accessKey && (
+                    <p className="small muted" style={{ maxWidth: 540, marginTop: 6 }}>
+                      {fmt(m.home.yourKey, { key: rater.accessKey })}
+                    </p>
+                  )}
                 </div>
                 <div className="row" style={{ marginTop: 12 }}>
                   {next ? (

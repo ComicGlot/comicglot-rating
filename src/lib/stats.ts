@@ -101,13 +101,15 @@ export type Results = Awaited<ReturnType<typeof loadResults>>;
 
 export async function loadResults(studyId?: string) {
   const where = { ...live, ...(studyId ? { page: { chapter: { practice: false, studyId } } } : {}) };
-  const raters = await db.rater.findMany({ select: { id: true, username: true } });
+  const raters = await db.rater.findMany({ select: { id: true, username: true, role: true } });
+  // Testers try the study out; their answers never count.
+  const tester = new Set(raters.filter((r) => r.role === "tester").map((r) => r.id));
   const nameOf = new Map(raters.map((r) => [r.id, r.username]));
   const isModel = (id: string) => (nameOf.get(id) ?? "").startsWith("model:");
 
   // ----- translations: guide against no type, per model group -----
   const cmp = await db.response.findMany({
-    where: { step: "compare", block: where },
+    where: { step: "compare", block: where, rater: { role: { not: "tester" } } },
     select: { raterId: true, blockId: true, data: true, block: { select: { className: true, candidates: { select: { id: true, condition: true } } } } },
   });
   type J = { rater: string; block: string; model: string; family: Family | null; choice: "guide" | "plain" | "tie" | "other"; overdoneGuide: boolean; overdonePlain: boolean; sourceWrong: boolean };
@@ -170,7 +172,7 @@ export async function loadResults(studyId?: string) {
     ...(["balloon", "box", "sfx"] as Family[]).map((f) => row(f, { balloon: "Outlined balloons", box: "Boxes and free text", sfx: "Sound effects" }[f], js.filter((j) => j.family === f))),
     row("all", "All", js),
   ];
-  const human = judgements.filter((j) => !isModel(j.rater));
+  const human = judgements.filter((j) => !isModel(j.rater) && !tester.has(j.rater));
   const models = [...new Set(judgements.map((j) => j.model))].sort();
   const perModel = models.map((m) => ({ model: m, human: row("all", m, human.filter((j) => j.model === m)) }));
   const judges = [...new Set(judgements.filter((j) => isModel(j.rater)).map((j) => j.rater))].map((id) => ({
@@ -189,7 +191,7 @@ export async function loadResults(studyId?: string) {
   const gtByBlock = new Map<string, string[]>();
   for (const r of tr) {
     const d = r.data as { text?: string; unreadable?: boolean };
-    if (isModel(r.raterId)) continue;
+    if (isModel(r.raterId) || tester.has(r.raterId)) continue;
     if (d.unreadable) { unreadable++; continue; }
     const gt = normChars(d.text ?? "");
     if (!gt.length) continue;
@@ -215,7 +217,7 @@ export async function loadResults(studyId?: string) {
   for (const v of gtByBlock.values()) if (v.length >= 2) { twoErr += levenshtein([...v[0]], [...v[1]]); twoLen += Math.max(v[0].length, v[1].length); twoN++; }
 
   // ----- types: agreement with the detector -----
-  const ty = await db.response.findMany({ where: { step: "types", block: where }, select: { raterId: true, data: true, block: { select: { className: true } } } });
+  const ty = await db.response.findMany({ where: { step: "types", block: where, rater: { role: { not: "tester" } } }, select: { raterId: true, data: true, block: { select: { className: true } } } });
   const typeRows = (["balloon", "box", "sfx"] as Family[]).map((f) => {
     const xs = ty.filter((t) => FAMILY_OF[t.block.className ?? ""] === f);
     return { family: f, n: xs.length, agree: xs.filter((t) => (t.data as { type?: string }).type === t.block.className).length };

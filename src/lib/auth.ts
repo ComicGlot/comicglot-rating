@@ -15,6 +15,6 @@ export async function requireRater(): Promise<Session> {
 
 export async function requireAdmin(): Promise<Session> {
   const s = await getSession();
-  if (!s || s.role !== "admin") redirect("/login");
+  if (!s || s.role !== "admin") redirect("/admin/login");
   return s;
 }
