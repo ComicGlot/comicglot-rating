@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { fmt } from "@/lib/i18n";
-import { TYPES, type Step } from "@/lib/steps";
+import { TONE, TYPES, type Step } from "@/lib/steps";
 import Icon from "./Icon";
 import { useI18n } from "./I18n";
 
@@ -46,7 +46,7 @@ export default function GuideDrawer({ steps }: { steps: Step[] }) {
                 <>
                   <span className="label">{m.guide.toneTitle}</span>
                   <div className="typelist" style={{ margin: "8px 0 12px" }}>
-                    {(["fine", "added", "overdone"] as const).map((t) => (
+                    {TONE.map((t) => (
                       <div key={t}><span>{m.tone[t]}</span><small>{m.tone[`${t}Help`]}</small></div>
                     ))}
                   </div>

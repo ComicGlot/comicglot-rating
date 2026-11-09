@@ -88,8 +88,13 @@ export type StudyRow = {
   guide: number;
   plain: number;
   tie: number;
-  overdoneGuide: number;
-  overdonePlain: number;
+  // Tone is optional: each share is out of the judgements that gave that version a tone.
+  toneGuide: number;
+  tonePlain: number;
+  strongGuide: number;
+  strongPlain: number;
+  flatGuide: number;
+  flatPlain: number;
   blocks: number;
   blocksDecided: number;
   blocksGuide: number;
@@ -112,7 +117,7 @@ export async function loadResults(studyId?: string) {
     where: { step: "compare", block: where, rater: { role: { not: "tester" } } },
     select: { raterId: true, blockId: true, data: true, block: { select: { className: true, candidates: { select: { id: true, condition: true } } } } },
   });
-  type J = { rater: string; block: string; model: string; family: Family | null; choice: "guide" | "plain" | "tie" | "other"; overdoneGuide: boolean; overdonePlain: boolean; sourceWrong: boolean };
+  type J = { rater: string; block: string; model: string; family: Family | null; choice: "guide" | "plain" | "tie" | "other"; toneGuide: string; tonePlain: string; sourceWrong: boolean };
   const judgements: J[] = [];
   let attentionN = 0, attentionPass = 0;
   const attentionFail = new Map<string, number>();
@@ -137,8 +142,8 @@ export async function loadResults(studyId?: string) {
         model: s.model ?? "(imported)",
         family: FAMILY_OF[r.block.className ?? ""] ?? null,
         choice: chosen === "tie" ? "tie" : chosen === "true_class" ? "guide" : chosen === "no_class" ? "plain" : "other",
-        overdoneGuide: s.tone[letterOf("true_class")] === "overdone",
-        overdonePlain: s.tone[letterOf("no_class")] === "overdone",
+        toneGuide: s.tone?.[letterOf("true_class")] ?? "",
+        tonePlain: s.tone?.[letterOf("no_class")] ?? "",
         sourceWrong: !!d.sourceWrong,
       });
     }
@@ -158,8 +163,12 @@ export async function loadResults(studyId?: string) {
       guide: js.filter((j) => j.choice === "guide").length,
       plain: js.filter((j) => j.choice === "plain").length,
       tie: js.filter((j) => j.choice === "tie").length,
-      overdoneGuide: js.filter((j) => j.overdoneGuide).length,
-      overdonePlain: js.filter((j) => j.overdonePlain).length,
+      toneGuide: js.filter((j) => j.toneGuide).length,
+      tonePlain: js.filter((j) => j.tonePlain).length,
+      strongGuide: js.filter((j) => j.toneGuide === "strong").length,
+      strongPlain: js.filter((j) => j.tonePlain === "strong").length,
+      flatGuide: js.filter((j) => j.toneGuide === "flat").length,
+      flatPlain: js.filter((j) => j.tonePlain === "flat").length,
       blocks: per.size,
       blocksDecided: decided,
       blocksGuide: forGuide,

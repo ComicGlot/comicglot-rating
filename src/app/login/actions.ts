@@ -18,6 +18,7 @@ export async function enter(_: EnterError, form: FormData): Promise<EnterError> 
   const known = await db.rater.findUnique({ where: { accessKey: key } });
   if (known) {
     if (!known.active) return "keyWrong";
+    await assignChapters(known.id); // sets added since the last visit
     jar.set(COOKIE, await signSession({ sub: known.id, username: known.username, role: "rater" }), cookieOptions);
     redirect("/rate");
   }

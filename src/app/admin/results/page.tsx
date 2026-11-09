@@ -33,7 +33,7 @@ function StudyTable({ rows }: { rows: StudyRow[] }) {
         <thead>
           <tr>
             <th>Texts</th><th className="r">Judgements</th><th>Split</th><th className="r">Guide</th><th className="r">No type</th><th className="r">Tie</th>
-            <th className="r">Overdone (guide / no type)</th><th className="r">α</th><th className="r">Texts decided</th><th className="r">Sign test p</th>
+            <th className="r">Too strong (guide / no type)</th><th className="r">Too flat (guide / no type)</th><th className="r">α</th><th className="r">Texts decided</th><th className="r">Sign test p</th>
           </tr>
         </thead>
         <tbody>
@@ -47,7 +47,8 @@ function StudyTable({ rows }: { rows: StudyRow[] }) {
                 <td className="r num">{pct(r.guide, r.judgements)}</td>
                 <td className="r num">{pct(r.plain, r.judgements)}</td>
                 <td className="r num">{pct(r.tie, r.judgements)}</td>
-                <td className="r num">{pct(r.overdoneGuide, r.judgements)} / {pct(r.overdonePlain, r.judgements)}</td>
+                <td className="r num">{pct(r.strongGuide, r.toneGuide)} / {pct(r.strongPlain, r.tonePlain)}</td>
+                <td className="r num">{pct(r.flatGuide, r.toneGuide)} / {pct(r.flatPlain, r.tonePlain)}</td>
                 <td className="r num">{fmtA(r.alpha)}</td>
                 <td className="r num" title={r.blocksDecided ? `guide wins ${r.blocksGuide} of ${r.blocksDecided} (95% CI ${Math.round(lo * 100)}–${Math.round(hi * 100)}%)` : ""}>
                   {r.blocksDecided ? <>{r.blocksGuide}/{r.blocksDecided} <span className="faint">({pct(r.blocksGuide, r.blocksDecided)})</span></> : "–"}
@@ -110,7 +111,7 @@ export default async function Results() {
           <span className="label">Per translation model (last column of the per-model table)</span>
           <div className="card" style={{ padding: 0, overflow: "auto" }}>
             <table className="t">
-              <thead><tr><th>Model</th><th className="r">Judgements</th><th>Split</th><th className="r">Guide preferred</th><th className="r">Overdone (guide)</th><th className="r">Sign test p</th></tr></thead>
+              <thead><tr><th>Model</th><th className="r">Judgements</th><th>Split</th><th className="r">Guide preferred</th><th className="r">Too strong (guide)</th><th className="r">Sign test p</th></tr></thead>
               <tbody>
                 {R.perModel.map(({ model, human: r }) => (
                   <tr key={model}>
@@ -118,7 +119,7 @@ export default async function Results() {
                     <td className="r num">{r.judgements}</td>
                     <td><Split r={r} /></td>
                     <td className="r num">{pct(r.guide, r.guide + r.plain)}</td>
-                    <td className="r num">{pct(r.overdoneGuide, r.judgements)}</td>
+                    <td className="r num">{pct(r.strongGuide, r.toneGuide)}</td>
                     <td className="r num">{r.blocksDecided ? fmtP(r.p) : "–"}</td>
                   </tr>
                 ))}

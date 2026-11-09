@@ -5,6 +5,7 @@ import GuideDrawer from "@/components/GuideDrawer";
 import Icon from "@/components/Icon";
 import { requireRater } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { assignChapters } from "@/lib/assign";
 import { loadPlan } from "@/lib/flow";
 import { fmt, plural } from "@/lib/i18n";
 import { getMessages } from "@/lib/i18n/server";
@@ -19,6 +20,7 @@ export default async function RateHome() {
   const { locale, m } = await getMessages();
   const rater = await db.rater.findUnique({ where: { id: s.sub }, select: { consentAt: true, accessKey: true } });
   if (!rater?.consentAt) redirect("/rate/welcome");
+  await assignChapters(s.sub); // sets added since the last visit
   const plan = await loadPlan(s.sub);
   const total = plan.reduce((n, c) => n + c.todo.length, 0);
   const done = plan.reduce((n, c) => n + c.todo.filter((t) => t.done).length, 0);

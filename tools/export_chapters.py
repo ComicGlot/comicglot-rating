@@ -121,6 +121,8 @@ def main() -> None:
                 raise SystemExit(f"{len(missing)} sample frames are not in --runs, e.g. {missing[:3]}")
             return [where[(f["run"], f["frame_index"])] for f in lst]
         chosen, practice = keys(smp["frames"]), keys(smp.get("practice", []))
+        # Only the sampled texts of a frame are exported: other text on the page is not part of the task.
+        sampled = {b["uid"] for f in smp["frames"] + smp.get("practice", []) for b in f.get("blocks", [])}
         groups = [(f"{a.study}-set{n // a.set_size + 1 + a.set_start:02d}", f"Set {n // a.set_size + 1 + a.set_start}", chosen[n:n + a.set_size])
                   for n in range(0, len(chosen), a.set_size)]
         if practice:
@@ -161,8 +163,11 @@ def main() -> None:
             (a.out / rel).parent.mkdir(parents=True, exist_ok=True)
             im.save(a.out / rel, quality=a.quality, optimize=True)
             out_blocks = []
-            for order, b in enumerate(frame.get("blocks", [])):
+            for b in frame.get("blocks", []):
                 uid = f"{run}/{b.get('frame_id', frame.get('id'))}/{b.get('id')}"
+                if a.sample and uid not in sampled:
+                    continue
+                order = len(out_blocks)
                 readings = {f: b[f] for f in ("text", "secondary_text", "corrected_text") if b.get(f)}
                 readings.update(extra.get(uid, {}))
                 source = source_of.get(uid) or b.get("corrected_text") or b.get("text") or ""

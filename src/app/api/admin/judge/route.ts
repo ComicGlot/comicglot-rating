@@ -27,9 +27,9 @@ function prompt(source: string, opts: { letter: string; text: string }[], box: n
     ...opts.map((o) => `${o.letter}: ${o.text}`),
     "",
     "Choose the version a reader of an English comic would get the same meaning and the same tone from. Adding tone that the page does not show is as wrong as losing it. Choose \"tie\" if both are equally good or equally bad.",
-    "For each version, say whether its tone fits the page (\"fine\"), adds some tone the page does not show (\"added\"), or is clearly too strong (\"overdone\").",
+    "For each version, say whether its tone is too flat (\"flat\": loses tone the page shows), fits the page (\"fine\"), or is too strong (\"strong\": adds tone the page does not show).",
     "",
-    `Answer with JSON only: {"choice": "${opts.map((o) => o.letter).join('" | "')}" | "tie", "tone": {${opts.map((o) => `"${o.letter}": "fine" | "added" | "overdone"`).join(", ")}}, "reason": "<one sentence>"}`,
+    `Answer with JSON only: {"choice": "${opts.map((o) => o.letter).join('" | "')}" | "tie", "tone": {${opts.map((o) => `"${o.letter}": "flat" | "fine" | "strong"`).join(", ")}}, "reason": "<one sentence>"}`,
   ].join("\n");
 }
 

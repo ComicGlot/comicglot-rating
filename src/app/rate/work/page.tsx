@@ -4,7 +4,7 @@ import TopNav from "@/components/TopNav";
 import GuideDrawer from "@/components/GuideDrawer";
 import { requireRater } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { canSeePage, loadPlan, nextTask, setsFor } from "@/lib/flow";
+import { canSeePage, comparable, loadPlan, nextTask, setsFor } from "@/lib/flow";
 import { fmt } from "@/lib/i18n";
 import { getMessages } from "@/lib/i18n/server";
 import { chapterTitle } from "@/lib/i18n/titles";
@@ -16,10 +16,12 @@ export const metadata = { title: "Frame" };
 
 export default async function Work({ searchParams }: { searchParams: Promise<{ page?: string; step?: string; saved?: string }> }) {
   const s = await requireRater();
-  const { m } = await getMessages();
-  const rater = await db.rater.findUnique({ where: { id: s.sub }, select: { consentAt: true } });
+  const [{ m }, rater, q] = await Promise.all([
+    getMessages(),
+    db.rater.findUnique({ where: { id: s.sub }, select: { consentAt: true } }),
+    searchParams,
+  ]);
   if (!rater?.consentAt) redirect("/rate/welcome");
-  const q = await searchParams;
   let pageId = q.page, step = q.step as Step | undefined;
   if (!pageId || !step) {
     const t = await nextTask(s.sub);
@@ -29,24 +31,32 @@ export default async function Work({ searchParams }: { searchParams: Promise<{ p
   }
   if (!STEP_ORDER.includes(step) || !(await canSeePage(s.sub, pageId))) redirect("/rate");
 
-  const page = await db.page.findUniqueOrThrow({
-    where: { id: pageId },
-    include: {
-      chapter: { include: { study: true } },
-      blocks: { orderBy: { order: "asc" }, include: { candidates: true } },
-    },
-  });
-  const plan = await loadPlan(s.sub);
+  const [page, plan, responses, pageDone] = await Promise.all([
+    db.page.findUniqueOrThrow({
+      where: { id: pageId },
+      include: {
+        chapter: { include: { study: true } },
+        blocks: { orderBy: { order: "asc" }, include: { candidates: true } },
+      },
+    }),
+    loadPlan(s.sub),
+    db.response.findMany({ where: { raterId: s.sub, block: { pageId } } }),
+    db.pageDone.findMany({ where: { raterId: s.sub, pageId } }),
+  ]);
   const chapterPlan = plan.find((c) => c.chapter.id === page.chapterId)!;
   if (!chapterPlan.steps.includes(step)) redirect("/rate");
   const pageTodo = chapterPlan.todo.filter((t) => t.pageId === page.id);
   if (!pageTodo.some((t) => t.step === step)) redirect(pageTodo[0] ? `/rate/work?page=${page.id}&step=${pageTodo[0].step}` : "/rate");
-  const responses = await db.response.findMany({ where: { raterId: s.sub, block: { pageId: page.id } } });
-  const pageDone = await db.pageDone.findMany({ where: { raterId: s.sub, pageId: page.id } });
+
+  // The next open task after this one, in plan order: saving goes straight there.
+  const order = plan.flatMap((c) => c.todo);
+  const here = order.findIndex((t) => t.pageId === page.id && t.step === step);
+  const nextT = [...order.slice(here + 1), ...order.slice(0, Math.max(0, here))].find((t) => !t.done && !(t.pageId === page.id && t.step === step));
+  const next = nextT ? `/rate/work?page=${nextT.pageId}&step=${nextT.step}` : "/rate";
 
   const blocks: WBBlock[] = page.blocks.map((b) => {
     const r = Object.fromEntries(responses.filter((x) => x.blockId === b.id).map((x) => [x.step, x.data as Record<string, unknown>]));
-    const base: WBBlock = { id: b.id, order: b.order, box: [b.x0, b.y0, b.x1, b.y1], responses: r };
+    const base: WBBlock = { id: b.id, order: b.order, box: [b.x0, b.y0, b.x1, b.y1], responses: r, cmp: comparable(b.candidates) };
     if (step === "compare") {
       // The client sees set numbers and letters only, never conditions or models.
       const text = new Map(b.candidates.map((c) => [c.id, c.text]));
@@ -94,6 +104,8 @@ export default async function Work({ searchParams }: { searchParams: Promise<{ p
         tabs={pageTodo.map((t) => ({ step: t.step, done: t.done }))}
         reviewSteps={pageTodo.map((t) => t.step).filter((x) => x !== "review")}
         saved={q.saved && (STEP_ORDER as readonly string[]).includes(q.saved) ? q.saved : undefined}
+        next={next}
+        nextPageId={nextT && nextT.pageId !== page.id ? nextT.pageId : undefined}
       />
     </>
   );

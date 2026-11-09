@@ -94,8 +94,9 @@ export function lettersFor(raterId: string, blockId: string, candidateIds: strin
 
 // May this rater see this page?
 export async function canSeePage(raterId: string, pageId: string): Promise<boolean> {
-  const p = await db.page.findUnique({ where: { id: pageId }, select: { chapterId: true } });
-  if (!p) return false;
-  if (!(await db.rater.findUnique({ where: { id: raterId }, select: { active: true } }))?.active) return false;
-  return !!(await db.chapterAssignment.findUnique({ where: { raterId_chapterId: { raterId, chapterId: p.chapterId } } }));
+  // One query: an assignment of an active rater to the chapter that holds the page.
+  return !!(await db.chapterAssignment.findFirst({
+    where: { raterId, rater: { active: true }, chapter: { pages: { some: { id: pageId } } } },
+    select: { raterId: true },
+  }));
 }

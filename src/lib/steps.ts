@@ -19,7 +19,7 @@ export const STEP_SHORT: Record<Step, string> = {
 export const STEP_HELP: Record<Step, string> = {
   types: "Choose the kind of balloon, box or lettering each numbered text is drawn in.",
   transcribe: "Type the Korean exactly as it is drawn in each numbered box, with its punctuation. Mark a box unreadable if you cannot read it.",
-  compare: "For each text, choose the English version that fits the line as it is drawn on the page, or call it a tie. Mark tone that is added or overdone.",
+  compare: "For each text, click the English version that works better on the page, or choose equal. Mark the tone of each version if you can.",
   review: "Look over what you entered on this frame. Go back to a step to change it, or confirm the frame.",
 };
 
@@ -87,14 +87,18 @@ export const OCR_GROUP_OF: Record<string, OcrGroup> = {
 };
 export const OCR_GROUP_LABEL: Record<OcrGroup, string> = { balloon: "Balloons", boxsys: "Boxes and system", free: "Free text, titles", sfx: "Sound effects" };
 
-export const TONE = ["fine", "added", "overdone"] as const;
-export const TONE_LABEL: Record<(typeof TONE)[number], string> = { fine: "Fits", added: "Adds tone", overdone: "Overdone" };
+// Tone of one version against the page, answered per version and optional: too flat (loses tone the page shows),
+// fits, too strong (adds tone the page does not show). Symmetric, so an unguided version can be judged as well.
+export const TONE = ["flat", "fine", "strong"] as const;
+export const TONE_LABEL: Record<(typeof TONE)[number], string> = { flat: "Too flat", fine: "Fits", strong: "Too strong" };
 
-// Steps of a study that this rater does; review is kept whenever another step is.
+// Steps of a study that this rater does. The review ("check the frame") step only joins two or more steps;
+// with one step, saving the frame is the whole task.
 export function effectiveSteps(studySteps: string[], raterSteps: string[]): Step[] {
   const allowed = new Set(raterSteps.length ? [...raterSteps, "review"] : STEP_ORDER);
   const s = STEP_ORDER.filter((x) => studySteps.includes(x) && allowed.has(x));
-  return s.some((x) => x !== "review") ? s : [];
+  const work = s.filter((x) => x !== "review");
+  return work.length > 1 ? s : work;
 }
 
 // The comparison group of an attention check: two identical texts, the expected answer is a tie.
