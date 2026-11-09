@@ -12,7 +12,8 @@ import { acceptConsent } from "../consent";
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Welcome" };
 
-const MINUTES: Record<Step, number> = { types: 0.25, transcribe: 0.6, compare: 0.9, review: 0.1 };
+// Minutes per text and step (a comparison with tones takes about 20 s), plus a little per frame to look at it.
+const MINUTES: Record<Step, number> = { types: 0.2, transcribe: 0.6, compare: 0.35, review: 0.05 };
 
 export default async function Welcome({ searchParams }: { searchParams: Promise<{ missing?: string }> }) {
   const s = await requireRater();
@@ -25,7 +26,7 @@ export default async function Welcome({ searchParams }: { searchParams: Promise<
   const steps = [...new Set(plan.flatMap((c) => c.steps))] as Step[];
   const blocks = await db.block.count({ where: { page: { chapter: { id: { in: plan.map((c) => c.chapter.id) }, practice: false } } } });
   const frames = plan.filter((c) => !c.chapter.practice).reduce((n, c) => n + c.pages.length, 0);
-  const minutes = Math.round(blocks * steps.reduce((x, st) => x + MINUTES[st], 0) + frames * 0.2);
+  const minutes = Math.round(blocks * steps.reduce((x, st) => x + MINUTES[st], 0) + frames * 0.05);
   // A study's own introduction (written by the admin) replaces the default text.
   const intro = study?.intro ? study.intro.split(/\n\s*\n/) : m.welcome.intro;
   const hasPractice = plan.some((c) => c.chapter.practice);

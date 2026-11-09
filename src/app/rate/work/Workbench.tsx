@@ -1,12 +1,10 @@
 "use client";
 import Link from "next/link";
-import { useActionState, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { preload } from "react-dom";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Icon from "@/components/Icon";
 import { useI18n } from "@/components/I18n";
 import { fmt, plural } from "@/lib/i18n";
 import { TONE, TYPES, type Step } from "@/lib/steps";
-import { saveStep, type SaveResult } from "../actions";
 
 export type WBBlock = {
   id: string;
@@ -20,7 +18,7 @@ export type WBBlock = {
   cmp?: boolean;
 };
 
-type Props = {
+export type WBTask = {
   pageId: string;
   width: number;
   height: number;
@@ -31,10 +29,14 @@ type Props = {
   pageNote: string;
   tabs: { step: Step; done: boolean }[];
   reviewSteps: Step[];
-  saved?: string;
-  // where saving goes next (the next open task), and that page, to fetch its image ahead
-  next?: string;
-  nextPageId?: string;
+};
+
+type Props = WBTask & {
+  // Called with the answers once the frame is complete; the set runner saves them and moves on.
+  onSave: (payload: string, ms: number) => void;
+  busy: boolean;
+  error?: string;
+  frameNav?: React.ReactNode;
 };
 
 type SetAnswer = { choice: string; tone: Record<string, string> };
@@ -52,7 +54,7 @@ type Answer = {
 function initial(step: Step, b: WBBlock): Answer {
   const r = (b.responses[step] ?? {}) as Answer & { sets?: (SetAnswer & { letters?: unknown })[] };
   if (step === "compare") {
-    // Nothing is preselected. The choice is required; the tone of each version is optional.
+    // Nothing is preselected: the choice and the tone of every version are answers the rater gives.
     const sets = (b.sets ?? []).map((opts, k) => ({
       choice: r.sets?.[k]?.choice ?? "",
       tone: Object.fromEntries(opts.map((o) => [o.letter, r.sets?.[k]?.tone?.[o.letter] ?? ""])),
@@ -64,8 +66,7 @@ function initial(step: Step, b: WBBlock): Answer {
   return {};
 }
 
-const setDone = (s: SetAnswer) => !!s.choice;
-const setFull = (s: SetAnswer) => !!s.choice && Object.values(s.tone).every((t) => !!t);
+const setDone = (s: SetAnswer) => !!s.choice && Object.values(s.tone).every((t) => !!t);
 
 function complete(step: Step, a: Answer | undefined): boolean {
   if (!a) return false;
@@ -110,10 +111,9 @@ export default function Workbench(p: Props) {
   const { locale, m } = useI18n();
   const draftKey = `cg-draft:${p.pageId}:${p.step}`;
   const started = useRef(Date.now());
-  const msInput = useRef<HTMLInputElement>(null);
-  const formRef = useRef<HTMLFormElement>(null);
   const frameScroll = useRef<HTMLDivElement>(null);
   const textRef = useRef<HTMLTextAreaElement>(null);
+  const saveRef = useRef<HTMLButtonElement>(null);
 
   const shown = useMemo(() => p.blocks.filter((b) => p.step !== "compare" || b.sets?.length), [p.blocks, p.step]);
   // The review table lists a text only if one of the steps has something to do on it.
@@ -126,9 +126,6 @@ export default function Workbench(p: Props) {
   const [zoom, setZoom] = useState(1);
   const [focusMode, setFocusMode] = useState(true);
   const [restored, setRestored] = useState(false);
-  const [res, action, pending] = useActionState<SaveResult, FormData>(saveStep, null);
-  // Fetch the next frame's image while this one is worked on, so moving on is quick.
-  if (p.nextPageId) preload(`/api/page-image/${p.nextPageId}`, { as: "image" });
 
   // Time per text: added up while a text is the active one.
   const timeOn = useRef<Record<string, number>>({});
@@ -178,6 +175,7 @@ export default function Workbench(p: Props) {
   const todo = shown.length - doneCount;
   const openSteps = p.tabs.filter((t) => t.step !== "review" && !t.done);
   const ready = p.step === "review" ? openSteps.length === 0 : p.step === "compare" ? revealed && todo === 0 : todo === 0;
+  const curDone = !!cur && complete(p.step, answers[cur.id]);
 
   const go = useCallback((d: number) => {
     const n = shown[Math.min(shown.length - 1, Math.max(0, idx + d))];
@@ -188,15 +186,34 @@ export default function Workbench(p: Props) {
     if (after) setActive(after.id);
   }, [shown, idx, answers, p.step]);
 
-  // Answer one comparison. Once its choice and both tones are given, move on to the next open text.
+  const payload = () => JSON.stringify({
+    blocks: Object.fromEntries(shown.map((b) => [b.id, { ...answers[b.id], ms: Math.round(timeOn.current[b.id] ?? 0) }])),
+    missing,
+    note: pageNote,
+  });
+  const submit = () => {
+    if (!ready || p.busy) return;
+    const prev = since.current;
+    if (prev.id) timeOn.current[prev.id] = (timeOn.current[prev.id] ?? 0) + (Date.now() - prev.t);
+    since.current = { id: active, t: Date.now() };
+    p.onSave(payload(), Date.now() - started.current);
+  };
+  const submitRef = useRef(submit);
+  submitRef.current = submit;
+
+  // Answer one comparison. When the text is complete, move to the next open one, or bring Save into view.
   const answer = useCallback((id: string, k: number, patch: Partial<SetAnswer>) => {
     const old = answers[id]?.sets?.[k];
     setSet(id, k, patch);
     if (!old) return;
     const now = { ...old, ...patch, tone: { ...old.tone, ...(patch.tone ?? {}) } };
-    const rest = (answers[id].sets ?? []).every((s, j) => j === k || setFull(s));
-    if (setFull(now) && !setFull(old) && rest) setTimeout(goNextOpen, 250);
-  }, [answers, setSet, goNextOpen]);
+    const rest = (answers[id].sets ?? []).every((s, j) => j === k || setDone(s));
+    if (setDone(now) && !setDone(old) && rest) {
+      const othersOpen = shown.some((b) => b.id !== id && !complete(p.step, answers[b.id]));
+      if (othersOpen) setTimeout(goNextOpen, 300);
+      else setTimeout(() => saveRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }), 60);
+    }
+  }, [answers, setSet, goNextOpen, shown, p.step]);
 
   // Keep the active box in view in the frame.
   useEffect(() => {
@@ -210,21 +227,25 @@ export default function Workbench(p: Props) {
     if (p.step === "transcribe") textRef.current?.focus({ preventScroll: true });
   }, [active, p.step]);
 
-  const submit = useCallback(() => {
-    if (ready && !pending) formRef.current?.requestSubmit();
-  }, [ready, pending]);
-
   // Keyboard shortcuts.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
         e.preventDefault();
         if (p.step === "transcribe" && cur && complete(p.step, answers[cur.id]) && todo > 0) return goNextOpen();
-        if (ready) return submit();
+        if (ready) return submitRef.current();
         return goNextOpen();
       }
       if (e.altKey && (e.key === "ArrowDown" || e.key === "ArrowUp")) { e.preventDefault(); return go(e.key === "ArrowDown" ? 1 : -1); }
       if (typing(e.target) || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.key === "Enter" && p.step !== "transcribe") {
+        // Enter does the obvious next thing: save a finished frame, or go to the next open text.
+        if ((e.target as HTMLElement)?.tagName === "BUTTON") return;
+        e.preventDefault();
+        if (ready) return submitRef.current();
+        if (curDone) return goNextOpen();
+        return;
+      }
       const k = e.key.toLowerCase();
       if (k === "j") return go(1);
       if (k === "k") return go(-1);
@@ -235,7 +256,7 @@ export default function Workbench(p: Props) {
       }
       if (p.step === "compare" && revealed && cur.sets) {
         const a = answers[cur.id];
-        const k0 = Math.max(0, (a.sets ?? []).findIndex((s) => !setFull(s)));
+        const k0 = Math.max(0, (a.sets ?? []).findIndex((s) => !setDone(s)));
         const opts = cur.sets[k0] ?? [];
         if (k === "e" || k === "t") answer(cur.id, k0, { choice: "tie" });
         else if (opts.some((o) => o.letter.toLowerCase() === k)) answer(cur.id, k0, { choice: k.toUpperCase() });
@@ -248,23 +269,9 @@ export default function Workbench(p: Props) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [p.step, cur, answers, todo, ready, revealed, go, goNextOpen, submit, set, answer]);
-
-  const payload = JSON.stringify({
-    blocks: Object.fromEntries(shown.map((b) => [b.id, { ...answers[b.id], ms: Math.round(timeOn.current[b.id] ?? 0) }])),
-    missing,
-    note: pageNote,
-  });
+  }, [p.step, cur, curDone, answers, todo, ready, revealed, go, goNextOpen, set, answer]);
 
   const a = cur ? answers[cur.id] : undefined;
-  const [toast, setToast] = useState(
-    p.saved ? (p.saved === "review" ? m.work.frameConfirmed : fmt(m.work.saved, { step: m.steps[p.saved as Step]?.label ?? "" })) : "",
-  );
-  useEffect(() => {
-    if (!toast) return;
-    const t = setTimeout(() => setToast(""), 2600);
-    return () => clearTimeout(t);
-  }, [toast]);
 
   const summary = (step: Step, data: Record<string, unknown> | undefined): React.ReactNode => {
     if (!data) return <span className="faint">{m.work.review.notDone}</span>;
@@ -284,12 +291,11 @@ export default function Workbench(p: Props) {
     return null;
   };
 
-  const errorText = res && "error" in res ? fmt(m.errors[res.error], { n: res.n ?? "" }) : "";
   const stepNames = (ss: { step: Step }[]) => ss.map((t) => m.steps[t.step].label.toLowerCase()).join(` ${m.work.and} `);
+  const saveLabel = p.step === "review" ? m.work.confirm : m.work.saveNext;
 
   return (
     <div className="wb">
-      {toast && <div className="toast" role="status"><Icon name="check" size={14} /> {toast}</div>}
       {/* ---------------- the frame ---------------- */}
       <section className="viewer" aria-label={m.work.theFrame}>
         <div className="vtools">
@@ -330,33 +336,24 @@ export default function Workbench(p: Props) {
       </section>
 
       {/* ---------------- the task ---------------- */}
-      <form
-        ref={formRef}
-        action={action}
-        className="task"
-        onSubmit={() => {
-          if (msInput.current) msInput.current.value = String(Date.now() - started.current);
-          try { localStorage.removeItem(draftKey); } catch {}
-        }}
-      >
-        <input type="hidden" name="pageId" value={p.pageId} />
-        <input type="hidden" name="step" value={p.step} />
-        <input type="hidden" name="payload" value={payload} />
-        <input type="hidden" name="ms" ref={msInput} defaultValue="0" />
-        <input type="hidden" name="next" value={p.next ?? ""} />
-
+      <div className="task">
         <div className="thead">
-          <div className="row between">
-            <nav className="seg" aria-label={m.work.title}>
-              {p.tabs.map((t) => (
-                <Link key={t.step} href={`/rate/work?page=${p.pageId}&step=${t.step}`} className={t.step === p.step ? "on" : ""} aria-current={t.step === p.step ? "step" : undefined}>
-                  <span className={`dot${t.done ? " done" : ""}`} />{m.steps[t.step].short}
-                </Link>
-              ))}
-            </nav>
-            {restored && p.step !== "review" && <span className="pill violet">{m.work.draftRestored}</span>}
-          </div>
-          {p.step !== "review" && shown.length > 0 && (
+          {(p.frameNav || p.tabs.length > 1) && (
+            <div className="row between">
+              {p.frameNav}
+              {p.tabs.length > 1 && (
+                <nav className="seg" aria-label={m.work.title}>
+                  {p.tabs.map((t) => (
+                    <Link key={t.step} href={`/rate/work?page=${p.pageId}&step=${t.step}`} className={t.step === p.step ? "on" : ""} aria-current={t.step === p.step ? "step" : undefined}>
+                      <span className={`dot${t.done ? " done" : ""}`} />{m.steps[t.step].short}
+                    </Link>
+                  ))}
+                </nav>
+              )}
+              {restored && p.step !== "review" && <span className="pill violet">{m.work.draftRestored}</span>}
+            </div>
+          )}
+          {p.step !== "review" && shown.length > 1 && (
             <div className="row between">
               <div className="blocknav" role="tablist">
                 {shown.map((b) => (
@@ -462,48 +459,7 @@ export default function Workbench(p: Props) {
                         <div key={k} className="compare-set">
                           {cur.sets!.length > 1 && <div className="setlabel" style={{ marginBottom: 10 }}><span className="label">{fmt(m.work.comparison, { k: k + 1, n: cur.sets!.length })}</span></div>}
                           <QHead n={1} done={!!st.choice}>{m.work.q1}</QHead>
-                          {/* Each version is the button that chooses it; its tone sits right under it. */}
-                          <div className="versions" role="radiogroup" aria-label={m.work.q1}>
-                            {opts.map((o, oi) => {
-                              const tone = st.tone[o.letter];
-                              return (
-                                <div key={o.letter} className="vcol">
-                                  <button
-                                    type="button"
-                                    role="radio"
-                                    aria-checked={st.choice === o.letter}
-                                    className={`version pick${st.choice === o.letter ? " win" : ""}${st.choice && st.choice !== o.letter && st.choice !== "tie" ? " lose" : ""}${st.choice === "tie" ? " tie" : ""}`}
-                                    onClick={() => answer(cur.id, k, { choice: o.letter })}
-                                  >
-                                    <div className="ltr">
-                                      <b>{o.letter}</b>
-                                      {st.choice === o.letter ? <span className="badge"><Icon name="check" size={12} /> {m.work.better}</span> : st.choice === "tie" ? <span className="badge">=</span> : <span className="kbd">{o.letter}</span>}
-                                    </div>
-                                    <div className="text">{o.text}</div>
-                                  </button>
-                                  <div className="tone3" role="radiogroup" aria-label={`${m.work.q2} · ${fmt(m.work.version, { l: o.letter })}`}>
-                                    <span className="tcap">{m.work.q2}</span>
-                                    <div className="tbtns">
-                                      {TONE.map((t, ti) => (
-                                        <button
-                                          type="button"
-                                          key={t}
-                                          role="radio"
-                                          aria-checked={tone === t}
-                                          className={`tbtn tone-${t}${tone === t ? " on" : ""}`}
-                                          onClick={() => answer(cur.id, k, { tone: { [o.letter]: tone === t ? "" : t } })}
-                                          title={m.tone[`${t}Help`]}
-                                        >
-                                          {m.tone[t]}
-                                          {oi < 2 && <span className="kbd">{oi * 3 + ti + 1}</span>}
-                                        </button>
-                                      ))}
-                                    </div>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
+                          {/* "Equal" first, then the versions: each version card is the button that chooses it. */}
                           <button
                             type="button"
                             role="radio"
@@ -514,6 +470,52 @@ export default function Workbench(p: Props) {
                             <span>{m.work.equal} <small>· {m.work.equalHint}</small></span>
                             <span className="kbd">E</span>
                           </button>
+                          <div className="versions" role="radiogroup" aria-label={m.work.q1}>
+                            {opts.map((o) => (
+                              <button
+                                type="button"
+                                key={o.letter}
+                                role="radio"
+                                aria-checked={st.choice === o.letter}
+                                className={`version pick${st.choice === o.letter ? " win" : ""}${st.choice && st.choice !== o.letter && st.choice !== "tie" ? " lose" : ""}${st.choice === "tie" ? " tie" : ""}`}
+                                onClick={() => answer(cur.id, k, { choice: o.letter })}
+                              >
+                                <div className="ltr">
+                                  <b>{o.letter}</b>
+                                  {st.choice === o.letter ? <span className="badge"><Icon name="check" size={12} /> {m.work.better}</span> : st.choice === "tie" ? <span className="badge">=</span> : <span className="kbd">{o.letter}</span>}
+                                </div>
+                                <div className="text">{o.text}</div>
+                              </button>
+                            ))}
+                          </div>
+                          {/* Tone, one row per version, in the same columns as the cards above. */}
+                          <QHead n={2} done={Object.values(st.tone).every((t) => !!t)}>{m.work.q2}</QHead>
+                          <div className="versions tones">
+                            {opts.map((o, oi) => {
+                              const tone = st.tone[o.letter];
+                              return (
+                                <div key={o.letter} className={`tone3${tone ? " done" : ""}`} role="radiogroup" aria-label={fmt(m.work.version, { l: o.letter })}>
+                                  <span className="tcap"><b>{o.letter}</b></span>
+                                  <div className="tbtns">
+                                    {TONE.map((t, ti) => (
+                                      <button
+                                        type="button"
+                                        key={t}
+                                        role="radio"
+                                        aria-checked={tone === t}
+                                        className={`tbtn tone-${t}${tone === t ? " on" : ""}`}
+                                        onClick={() => answer(cur.id, k, { tone: { [o.letter]: t } })}
+                                        title={m.tone[`${t}Help`]}
+                                      >
+                                        {m.tone[t]}
+                                        {oi < 2 && <span className="kbd">{oi * 3 + ti + 1}</span>}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
                         </div>
                       );
                     })}
@@ -525,15 +527,27 @@ export default function Workbench(p: Props) {
                       <input type="text" className="grow" value={a.comment} onChange={(e) => set(cur.id, { comment: e.target.value })} placeholder={m.work.comment} style={{ minHeight: 28, padding: "4px 10px", fontSize: 13 }} />
                     </div>
                   )}
-                  {revealed && (
-                    <div className="hint" style={{ marginTop: 12 }}>
-                      <span><span className="kbd">A</span><span className="kbd">B</span>{m.work.keys.choose}</span>
-                      <span><span className="kbd">E</span>{m.work.keys.equal}</span>
-                      <span><span className="kbd">1 2 3</span> / <span className="kbd">4 5 6</span>{m.work.keys.tone}</span>
-                      <span><span className="kbd">J</span>{m.work.keys.next}</span>
-                    </div>
-                  )}
                 </>
+              )}
+
+              {/* The obvious next step, right where the answer was given. */}
+              {(p.step !== "compare" || revealed) && (ready ? (
+                <button type="button" ref={saveRef} className="btn primary nextbig" onClick={submit} disabled={p.busy}>
+                  {p.busy ? m.work.saving : saveLabel} <Icon name="arrowR" /> <span className="kbd">↵</span>
+                </button>
+              ) : curDone && todo > 0 ? (
+                <button type="button" className="btn nextbig" onClick={goNextOpen}>
+                  {m.work.nextText} <Icon name="arrowR" /> <span className="kbd">↵</span>
+                </button>
+              ) : null)}
+
+              {p.step === "compare" && revealed && (
+                <div className="hint" style={{ marginTop: 12 }}>
+                  <span><span className="kbd">E</span>{m.work.keys.equal}</span>
+                  <span><span className="kbd">A</span><span className="kbd">B</span>{m.work.keys.choose}</span>
+                  <span><span className="kbd">1 2 3</span> / <span className="kbd">4 5 6</span>{m.work.keys.tone}</span>
+                  <span><span className="kbd">↵</span>{m.work.keys.enter}</span>
+                </div>
               )}
             </div>
           )}
@@ -588,12 +602,12 @@ export default function Workbench(p: Props) {
         <div className="tfoot">
           {p.step !== "review" && shown.length > 1 && (
             <>
-              <button type="button" className="btn icon" onClick={() => go(-1)} disabled={idx === 0} title={`${m.work.prev} (K)`} aria-label={m.work.prev}><Icon name="arrowL" /></button>
-              <button type="button" className="btn icon" onClick={() => go(1)} disabled={idx === shown.length - 1} title={`${m.work.next} (J)`} aria-label={m.work.next}><Icon name="arrowR" /></button>
+              <button type="button" className="btn navbtn" onClick={() => go(-1)} disabled={idx === 0} title={`${m.work.prev} (K)`}><Icon name="arrowL" /> {m.work.prev}</button>
+              <button type="button" className="btn navbtn" onClick={() => go(1)} disabled={idx === shown.length - 1} title={`${m.work.next} (J)`}>{m.work.next} <Icon name="arrowR" /></button>
             </>
           )}
           <span className="grow small muted">
-            {errorText ? <span className="err">{errorText}</span>
+            {p.error ? <span className="err">{p.error}</span>
               : p.step === "review" ? (openSteps.length ? fmt(m.work.finishFirst, { steps: stepNames(openSteps) }) : m.work.allRight)
               : todo > 0 ? plural(locale, m.work.left, todo) : m.work.allAnswered}
           </span>
@@ -602,13 +616,13 @@ export default function Workbench(p: Props) {
               {m.work.showVersions} <Icon name="arrowR" />
             </button>
           ) : (
-            <button className="btn primary" disabled={!ready || pending}>
-              {pending ? m.work.saving : p.step === "review" ? m.work.confirm : m.work.save}
-              {!pending && <span className="kbd">Ctrl ↵</span>}
+            <button type="button" className="btn primary" disabled={!ready || p.busy} onClick={submit}>
+              {p.busy ? m.work.saving : saveLabel}
+              {!p.busy && <span className="kbd">↵</span>}
             </button>
           )}
         </div>
-      </form>
+      </div>
     </div>
   );
 }

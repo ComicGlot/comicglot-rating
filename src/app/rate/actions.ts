@@ -1,5 +1,4 @@
 "use server";
-import { redirect } from "next/navigation";
 import { requireRater } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { canSeePage, loadPlan, setsFor } from "@/lib/flow";
@@ -7,7 +6,7 @@ import { STEP_ORDER, TONE, TYPES, effectiveSteps, type Step } from "@/lib/steps"
 
 // Errors are codes; the work screen shows them in the rater's language (messages.errors).
 export type SaveError = "notAssigned" | "unreadableForm" | "notYourStep" | "finishOther" | "chooseType" | "typeOrUnreadable" | "chooseVersion" | "chooseTone";
-export type SaveResult = { error: SaveError; n?: number } | null;
+export type SaveResult = { error: SaveError; n?: number } | { ok: true };
 
 const TYPE_SET = new Set<string>(TYPES.map(([v]) => v));
 const TONE_SET = new Set<string>(TONE);
@@ -15,17 +14,18 @@ const str = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice
 
 type In = Record<string, unknown>;
 
-// Saves one step of one page for the signed-in rater, then moves to the next task.
-export async function saveStep(_: SaveResult, form: FormData): Promise<SaveResult> {
+// Saves one step of one page for the signed-in rater. Called from the work screen, which has already moved on to
+// the next frame: the save runs in the background and only a failure brings the rater back.
+export async function saveTask(input: { pageId: string; step: string; payload: string; ms: number }): Promise<SaveResult> {
   const s = await requireRater();
-  const pageId = String(form.get("pageId") ?? "");
-  const step = String(form.get("step") ?? "") as Step;
-  const ms = Math.max(0, Math.min(Number(form.get("ms")) || 0, 6 * 3600 * 1000));
+  const pageId = String(input.pageId ?? "");
+  const step = String(input.step ?? "") as Step;
+  const ms = Math.max(0, Math.min(Number(input.ms) || 0, 6 * 3600 * 1000));
   if (!STEP_ORDER.includes(step) || !(await canSeePage(s.sub, pageId))) return { error: "notAssigned" };
 
   let payload: { blocks?: Record<string, In>; missing?: boolean; note?: string };
   try {
-    payload = JSON.parse(String(form.get("payload") ?? "{}"));
+    payload = JSON.parse(String(input.payload ?? "{}"));
   } catch {
     return { error: "unreadableForm" };
   }
@@ -73,8 +73,9 @@ export async function saveStep(_: SaveResult, form: FormData): Promise<SaveResul
           const choice = str(x.choice, 8);
           if (choice !== "tie" && !(choice in set.letters)) return { error: "chooseVersion", n: b.order + 1 };
           const toneIn = (x.tone ?? {}) as Record<string, unknown>;
-          // Tone is optional: only the versions the rater marked carry one.
-          const tone = Object.fromEntries(Object.keys(set.letters).filter((l) => TONE_SET.has(String(toneIn[l]))).map((l) => [l, String(toneIn[l])]));
+          // Tone is a required answer for every version; nothing is filled in for the rater.
+          if (Object.keys(set.letters).some((l) => !TONE_SET.has(String(toneIn[l])))) return { error: "chooseTone", n: b.order + 1 };
+          const tone = Object.fromEntries(Object.keys(set.letters).map((l) => [l, String(toneIn[l])]));
           // Store the letters with their candidates, so the export can unblind without recomputing.
           out.push({ model: set.key || null, letters: set.letters, choice, tone });
         }
@@ -104,8 +105,5 @@ export async function saveStep(_: SaveResult, form: FormData): Promise<SaveResul
     // A change after the page was confirmed asks for a new confirmation.
     ...(step !== "review" ? [db.pageDone.deleteMany({ where: { raterId: s.sub, pageId, step: "review" } })] : []),
   ]);
-  // Straight to the next open task the page worked out; /rate/work alone would look it up again.
-  const next = String(form.get("next") ?? "");
-  const to = /^\/rate(\/work\?page=[\w-]+&step=[a-z]+)?$/.test(next) ? next : "/rate/work";
-  redirect(to === "/rate" ? "/rate" : `${to}${to.includes("?") ? "&" : "?"}saved=${step}`);
+  return { ok: true };
 }

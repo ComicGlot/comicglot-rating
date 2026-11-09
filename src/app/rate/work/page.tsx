@@ -1,112 +1,105 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import TopNav from "@/components/TopNav";
 import GuideDrawer from "@/components/GuideDrawer";
+import LiveProgress from "@/components/LiveProgress";
 import { requireRater } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { canSeePage, comparable, loadPlan, nextTask, setsFor } from "@/lib/flow";
-import { fmt } from "@/lib/i18n";
+import { comparable, loadPlan, setsFor } from "@/lib/flow";
 import { getMessages } from "@/lib/i18n/server";
 import { chapterTitle } from "@/lib/i18n/titles";
 import { STEP_ORDER, type Step } from "@/lib/steps";
-import Workbench, { type WBBlock } from "./Workbench";
+import SetRunner, { type RunTask } from "./SetRunner";
+import { type WBBlock } from "./Workbench";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Frame" };
 
-export default async function Work({ searchParams }: { searchParams: Promise<{ page?: string; step?: string; saved?: string }> }) {
+export default async function Work({ searchParams }: { searchParams: Promise<{ page?: string; step?: string }> }) {
   const s = await requireRater();
-  const [{ m }, rater, q] = await Promise.all([
+  const [{ m }, rater, q, plan] = await Promise.all([
     getMessages(),
     db.rater.findUnique({ where: { id: s.sub }, select: { consentAt: true } }),
     searchParams,
+    loadPlan(s.sub),
   ]);
   if (!rater?.consentAt) redirect("/rate/welcome");
+
   let pageId = q.page, step = q.step as Step | undefined;
   if (!pageId || !step) {
-    const t = await nextTask(s.sub);
+    const t = plan.flatMap((c) => c.todo).find((x) => !x.done);
     if (!t) redirect("/rate");
     pageId = t.pageId;
     step = t.step;
   }
-  if (!STEP_ORDER.includes(step) || !(await canSeePage(s.sub, pageId))) redirect("/rate");
+  // The plan holds only this rater's chapters of active studies, so it is also the access check.
+  const chapterPlan = plan.find((c) => c.pages.some((p) => p.id === pageId));
+  if (!STEP_ORDER.includes(step) || !chapterPlan || !chapterPlan.steps.includes(step)) redirect("/rate");
+  const pageTodo = chapterPlan.todo.filter((t) => t.pageId === pageId);
+  if (!pageTodo.some((t) => t.step === step)) redirect(pageTodo[0] ? `/rate/work?page=${pageId}&step=${pageTodo[0].step}` : "/rate");
 
-  const [page, plan, responses, pageDone] = await Promise.all([
-    db.page.findUniqueOrThrow({
-      where: { id: pageId },
-      include: {
-        chapter: { include: { study: true } },
-        blocks: { orderBy: { order: "asc" }, include: { candidates: true } },
-      },
-    }),
-    loadPlan(s.sub),
-    db.response.findMany({ where: { raterId: s.sub, block: { pageId } } }),
-    db.pageDone.findMany({ where: { raterId: s.sub, pageId } }),
+  // A rater with one step works through the whole set in the browser; with several steps, one task at a time.
+  const oneStep = chapterPlan.steps.filter((x) => x !== "review").length === 1;
+  const run = oneStep ? chapterPlan.todo.filter((t) => t.step === step) : pageTodo.filter((t) => t.step === step);
+  const runPages = [...new Set(run.map((t) => t.pageId))];
+  const [pages, responses, pageDone] = await Promise.all([
+    db.page.findMany({ where: { id: { in: runPages } }, include: { blocks: { orderBy: { order: "asc" }, include: { candidates: true } } } }),
+    db.response.findMany({ where: { raterId: s.sub, block: { pageId: { in: runPages } } } }),
+    db.pageDone.findMany({ where: { raterId: s.sub, pageId: { in: runPages } } }),
   ]);
-  const chapterPlan = plan.find((c) => c.chapter.id === page.chapterId)!;
-  if (!chapterPlan.steps.includes(step)) redirect("/rate");
-  const pageTodo = chapterPlan.todo.filter((t) => t.pageId === page.id);
-  if (!pageTodo.some((t) => t.step === step)) redirect(pageTodo[0] ? `/rate/work?page=${page.id}&step=${pageTodo[0].step}` : "/rate");
+  const byId = new Map(pages.map((p) => [p.id, p]));
+  const askOwn = chapterPlan.chapter.study.askOwnTranslation;
 
-  // The next open task after this one, in plan order: saving goes straight there.
-  const order = plan.flatMap((c) => c.todo);
-  const here = order.findIndex((t) => t.pageId === page.id && t.step === step);
-  const nextT = [...order.slice(here + 1), ...order.slice(0, Math.max(0, here))].find((t) => !t.done && !(t.pageId === page.id && t.step === step));
-  const next = nextT ? `/rate/work?page=${nextT.pageId}&step=${nextT.step}` : "/rate";
-
-  const blocks: WBBlock[] = page.blocks.map((b) => {
-    const r = Object.fromEntries(responses.filter((x) => x.blockId === b.id).map((x) => [x.step, x.data as Record<string, unknown>]));
-    const base: WBBlock = { id: b.id, order: b.order, box: [b.x0, b.y0, b.x1, b.y1], responses: r, cmp: comparable(b.candidates) };
-    if (step === "compare") {
-      // The client sees set numbers and letters only, never conditions or models.
-      const text = new Map(b.candidates.map((c) => [c.id, c.text]));
-      const sets = setsFor(s.sub, b.id, b.candidates);
-      if (sets.length) {
-        base.source = b.sourceText;
-        base.sets = sets.map((x) => Object.entries(x.letters).map(([letter, id]) => ({ letter, text: text.get(id) ?? "" })));
+  const tasks: RunTask[] = run.map((t) => {
+    const page = byId.get(t.pageId)!;
+    const blocks: WBBlock[] = page.blocks.map((b) => {
+      const r = Object.fromEntries(responses.filter((x) => x.blockId === b.id).map((x) => [x.step, x.data as Record<string, unknown>]));
+      const base: WBBlock = { id: b.id, order: b.order, box: [b.x0, b.y0, b.x1, b.y1], responses: r, cmp: comparable(b.candidates) };
+      if (t.step === "compare") {
+        // The client sees set numbers and letters only, never conditions or models.
+        const text = new Map(b.candidates.map((c) => [c.id, c.text]));
+        const sets = setsFor(s.sub, b.id, b.candidates);
+        if (sets.length) {
+          base.source = b.sourceText;
+          base.sets = sets.map((x) => Object.entries(x.letters).map(([letter, id]) => ({ letter, text: text.get(id) ?? "" })));
+        }
       }
-    }
-    return base;
+      return base;
+    });
+    const pt = chapterPlan.todo.filter((x) => x.pageId === page.id);
+    const typesDone = pageDone.find((d) => d.pageId === page.id && d.step === "types");
+    return {
+      pageId: page.id, width: page.width, height: page.height, step: t.step, blocks, askOwn,
+      missing: typesDone?.missing ?? false, pageNote: typesDone?.note ?? "",
+      tabs: pt.map((x) => ({ step: x.step, done: x.done })), reviewSteps: pt.map((x) => x.step).filter((x) => x !== "review"),
+      done: t.done, frame: chapterPlan.pages.findIndex((p) => p.id === page.id) + 1,
+    };
   });
+  const start = Math.max(0, tasks.findIndex((t) => t.pageId === pageId && t.step === step));
 
-  const typesDone = pageDone.find((d) => d.step === "types");
+  // After this run: the next open task outside it, in plan order.
+  const order = plan.flatMap((c) => c.todo);
+  const inRun = new Set(run.map((t) => `${t.pageId}:${t.step}`));
+  const here = order.findIndex((t) => t.pageId === pageId && t.step === step);
+  const nextT = [...order.slice(here + 1), ...order.slice(0, Math.max(0, here))].find((t) => !t.done && !inRun.has(`${t.pageId}:${t.step}`));
+  const after = nextT ? `/rate/work?page=${nextT.pageId}&step=${nextT.step}` : "/rate";
+
   const all = plan.reduce((n, c) => n + c.todo.length, 0);
   const done = plan.reduce((n, c) => n + c.todo.filter((t) => t.done).length, 0);
-  const framePos = chapterPlan.pages.findIndex((p) => p.id === page.id);
-  const pct = Math.round((100 * done) / Math.max(1, all));
 
   return (
     <>
       <TopNav
         home="/rate"
         user={s.username}
-        crumbs={[{ label: m.work.yourFrames, href: "/rate" }, { label: chapterTitle(page.chapter, m), href: "/rate" }, { label: fmt(m.work.frameOf, { n: framePos + 1, total: chapterPlan.pages.length }), strong: true }]}
+        crumbs={[{ label: m.work.yourFrames, href: "/rate" }, { label: chapterTitle(chapterPlan.chapter, m), strong: true }]}
         right={<GuideDrawer steps={chapterPlan.steps} />}
         lang
       >
-        {page.chapter.practice && <span className="pill violet">{m.work.practice}</span>}
+        {chapterPlan.chapter.practice && <span className="pill violet">{m.work.practice}</span>}
         <span style={{ flex: 1 }} />
-        <Link href="/rate" className="minibar" title={`${done} of ${all} tasks done`} style={{ minWidth: 160 }}>
-          <span className="small muted num">{pct}%</span>
-          <div className="bar"><i style={{ width: `${pct}%` }} /></div>
-        </Link>
+        <LiveProgress done={done} all={all} />
       </TopNav>
-      <Workbench
-        key={`${page.id}:${step}`}
-        pageId={page.id}
-        width={page.width}
-        height={page.height}
-        step={step}
-        blocks={blocks}
-        askOwn={page.chapter.study.askOwnTranslation}
-        missing={typesDone?.missing ?? false}
-        pageNote={typesDone?.note ?? ""}
-        tabs={pageTodo.map((t) => ({ step: t.step, done: t.done }))}
-        reviewSteps={pageTodo.map((t) => t.step).filter((x) => x !== "review")}
-        saved={q.saved && (STEP_ORDER as readonly string[]).includes(q.saved) ? q.saved : undefined}
-        next={next}
-        nextPageId={nextT && nextT.pageId !== page.id ? nextT.pageId : undefined}
-      />
+      <SetRunner key={`${chapterPlan.chapter.id}:${step}:${start}`} tasks={tasks} start={start} after={after} frames={chapterPlan.pages.length} />
     </>
   );
 }
