@@ -64,6 +64,7 @@ def main() -> None:
     ap.add_argument("--frames", default="", help="frame range per chapter, e.g. 0-19 (default: all)")
     ap.add_argument("--per-type", type=int, default=0, help="sample frames until every type has this many blocks")
     ap.add_argument("--set-size", type=int, default=20, help="frames per set when sampling")
+    ap.add_argument("--set-start", type=int, default=0, help="number of sets already in the study (a later sample continues after them)")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--skip-empty", action="store_true", help="leave out frames without blocks")
     ap.add_argument("--sample", type=Path, help="sample.json of eval/sample_frames.py: export exactly these frames")
@@ -120,7 +121,7 @@ def main() -> None:
                 raise SystemExit(f"{len(missing)} sample frames are not in --runs, e.g. {missing[:3]}")
             return [where[(f["run"], f["frame_index"])] for f in lst]
         chosen, practice = keys(smp["frames"]), keys(smp.get("practice", []))
-        groups = [(f"{a.study}-set{n // a.set_size + 1:02d}", f"Set {n // a.set_size + 1}", chosen[n:n + a.set_size])
+        groups = [(f"{a.study}-set{n // a.set_size + 1 + a.set_start:02d}", f"Set {n // a.set_size + 1 + a.set_start}", chosen[n:n + a.set_size])
                   for n in range(0, len(chosen), a.set_size)]
         if practice:
             groups.insert(0, (f"{a.study}-practice", "Practice", practice))
