@@ -113,11 +113,11 @@ const de: Messages = {
     compare: {
       label: "Übersetzungen",
       short: "Übersetzen",
-      help: "Klicken Sie bei jedem Text auf die englische Version, die auf der Seite besser funktioniert, oder wählen Sie „Gleich“. Markieren Sie dann, wenn möglich, den Ton jeder Version.",
+      help: "Klicken Sie bei jedem Text auf die englische Version, die auf der Seite besser funktioniert, oder wählen Sie „Gleich“. Markieren Sie dann den Ton jeder Version.",
       guide: [
         "Beurteilen Sie jede Fassung am Koreanischen und daran, wie die Zeile gezeichnet ist: die Blase, die Schrift und die Szene.",
         "Klicken Sie auf die Version, aus der Leser eines englischen Comics die richtige Bedeutung und den richtigen Ton erhalten. Wählen Sie „Gleich“, wenn beide gleich gut oder gleich schlecht sind.",
-        "Markieren Sie unter jeder Version ihren Ton: „Zu flach“ verliert Ton, den die Seite zeigt (ein Schrei ruhig gelesen), „Zu stark“ fügt Ton hinzu, den die Seite nicht zeigt (eine ruhige Zeile geschrien). Lassen Sie es leer, wenn Sie unsicher sind.",
+        "Markieren Sie unter jeder Version ihren Ton: „Zu flach“ verliert Ton, den die Seite zeigt (ein Schrei ruhig gelesen), „Zu stark“ fügt Ton hinzu, den die Seite nicht zeigt (eine ruhige Zeile geschrien).",
         "Ist das angezeigte Koreanisch selbst falsch (falsch gelesen), beurteilen Sie die Fassungen trotzdem und kreuzen Sie „Das Koreanisch scheint falsch“ an.",
       ],
     },
@@ -185,7 +185,7 @@ const de: Messages = {
     better: "Besser",
     equal: "Gleich",
     equalHint: "gleich gut oder gleich schlecht",
-    q2: "Ton auf der Seite (optional)",
+    q2: "Ton auf der Seite",
     version: "Fassung {l}",
     koreanWrong: "Das Koreanisch scheint falsch",
     comment: "Kommentar (optional)",

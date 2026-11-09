@@ -115,11 +115,11 @@ const en = {
     compare: {
       label: "Translations",
       short: "Translate",
-      help: "For each text, click the English version that works better on the page, or choose “Equal”. Then mark the tone of each version if you can.",
+      help: "For each text, click the English version that works better on the page, or choose “Equal”. Then mark the tone of each version.",
       guide: [
         "Judge each version against the Korean and against how the line is drawn: the balloon, the lettering and the scene.",
         "Click the version a reader of an English comic would get the right meaning and tone from. Choose “Equal” when both are equally good or equally bad.",
-        "Under each version, mark its tone: “Too flat” loses tone the page shows (a shout read calmly), “Too strong” adds tone the page does not show (a calm line shouted). Leave it empty if you are unsure.",
+        "Under each version, mark its tone: “Too flat” loses tone the page shows (a shout read calmly), “Too strong” adds tone the page does not show (a calm line shouted).",
         "If the Korean shown is itself wrong (misread), still judge the versions, and tick “The Korean looks wrong”.",
       ],
     },
@@ -187,7 +187,7 @@ const en = {
     better: "Better",
     equal: "Equal",
     equalHint: "equally good or equally bad",
-    q2: "Tone on the page (optional)",
+    q2: "Tone on the page",
     version: "Version {l}",
     koreanWrong: "The Korean looks wrong",
     comment: "Comment (optional)",

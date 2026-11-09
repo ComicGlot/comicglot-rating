@@ -113,11 +113,11 @@ const fr: Messages = {
     compare: {
       label: "Traductions",
       short: "Traduire",
-      help: "Pour chaque texte, cliquez sur la version anglaise qui fonctionne le mieux sur la page, ou choisissez « Égales ». Indiquez ensuite le ton de chaque version si vous le pouvez.",
+      help: "Pour chaque texte, cliquez sur la version anglaise qui fonctionne le mieux sur la page, ou choisissez « Égales ». Indiquez ensuite le ton de chaque version.",
       guide: [
         "Jugez chaque version d’après le coréen et d’après la façon dont la réplique est dessinée : la bulle, le lettrage et la scène.",
         "Cliquez sur la version dont un lecteur de bande dessinée anglaise tirerait le bon sens et le bon ton. Choisissez « Égales » si les deux sont aussi bonnes ou aussi mauvaises.",
-        "Sous chaque version, indiquez son ton : « Trop plat » perd un ton que la page montre (un cri lu calmement), « Trop fort » ajoute un ton que la page ne montre pas (une réplique calme criée). Laissez vide en cas de doute.",
+        "Sous chaque version, indiquez son ton : « Trop plat » perd un ton que la page montre (un cri lu calmement), « Trop fort » ajoute un ton que la page ne montre pas (une réplique calme criée).",
         "Si le coréen affiché est lui-même erroné (mal lu), jugez quand même les versions et cochez « Le coréen semble erroné ».",
       ],
     },
@@ -185,7 +185,7 @@ const fr: Messages = {
     better: "Meilleure",
     equal: "Égales",
     equalHint: "aussi bonnes ou aussi mauvaises",
-    q2: "Ton sur la page (facultatif)",
+    q2: "Ton sur la page",
     version: "Version {l}",
     koreanWrong: "Le coréen semble erroné",
     comment: "Commentaire (facultatif)",

@@ -19,7 +19,7 @@ export const STEP_SHORT: Record<Step, string> = {
 export const STEP_HELP: Record<Step, string> = {
   types: "Choose the kind of balloon, box or lettering each numbered text is drawn in.",
   transcribe: "Type the Korean exactly as it is drawn in each numbered box, with its punctuation. Mark a box unreadable if you cannot read it.",
-  compare: "For each text, click the English version that works better on the page, or choose equal. Mark the tone of each version if you can.",
+  compare: "For each text, click the English version that works better on the page, or choose equal. Mark the tone of each version.",
   review: "Look over what you entered on this frame. Go back to a step to change it, or confirm the frame.",
 };
 

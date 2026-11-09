@@ -201,19 +201,16 @@ export default function Workbench(p: Props) {
   const submitRef = useRef(submit);
   submitRef.current = submit;
 
-  // Answer one comparison. When the text is complete, move to the next open one, or bring Save into view.
+  // Answer one comparison. When the text is complete, the next-step button (next text, or save) comes into view;
+  // the rater moves on themselves.
   const answer = useCallback((id: string, k: number, patch: Partial<SetAnswer>) => {
     const old = answers[id]?.sets?.[k];
     setSet(id, k, patch);
     if (!old) return;
     const now = { ...old, ...patch, tone: { ...old.tone, ...(patch.tone ?? {}) } };
     const rest = (answers[id].sets ?? []).every((s, j) => j === k || setDone(s));
-    if (setDone(now) && !setDone(old) && rest) {
-      const othersOpen = shown.some((b) => b.id !== id && !complete(p.step, answers[b.id]));
-      if (othersOpen) setTimeout(goNextOpen, 300);
-      else setTimeout(() => saveRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }), 60);
-    }
-  }, [answers, setSet, goNextOpen, shown, p.step]);
+    if (setDone(now) && !setDone(old) && rest) setTimeout(() => saveRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }), 60);
+  }, [answers, setSet]);
 
   // Keep the active box in view in the frame.
   useEffect(() => {
@@ -536,7 +533,7 @@ export default function Workbench(p: Props) {
                   {p.busy ? m.work.saving : saveLabel} <Icon name="arrowR" /> <span className="kbd">↵</span>
                 </button>
               ) : curDone && todo > 0 ? (
-                <button type="button" className="btn nextbig" onClick={goNextOpen}>
+                <button type="button" ref={saveRef} className="btn primary nextbig" onClick={goNextOpen}>
                   {m.work.nextText} <Icon name="arrowR" /> <span className="kbd">↵</span>
                 </button>
               ) : null)}
