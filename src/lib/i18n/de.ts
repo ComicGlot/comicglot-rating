@@ -39,6 +39,7 @@ const de: Messages = {
     textsInAll: "{n} Texte insgesamt",
     time: "Zeit",
     timeHint: "Eine grobe Schätzung; machen Sie Pausen, wann immer Sie möchten",
+    perSet: "pro Satz von etwa {n} Texten; machen Sie Pausen und hören Sie auf, wann Sie möchten",
     share: "Ihr Anteil: {n} der {total} Sätze, etwa {min} Minuten. Bitte erledigen Sie mindestens so viel. Wenn Sie Zeit haben, machen Sie weiter: Jeder weitere Satz hilft, und Sie können jederzeit aufhören.",
     min: "Min.",
     saving: "Speichern",
@@ -228,6 +229,10 @@ const de: Messages = {
   },
   // Ranking mode of the translations step.
   ranking: {
+    dropNowhere: "auf einem Platz ablegen",
+    tied: "{n} gleichauf",
+    nextRank: "nächster Rang",
+    sameRank: "gleicher Rang",
     label: "Übersetzungen",
     short: "Ordnen",
     help: "Ziehen Sie für jeden Text die englischen Fassungen in Ihre Reihenfolge, von der besten links bis zur schwächsten rechts.",
@@ -240,7 +245,7 @@ const de: Messages = {
       "Wenn das gezeigte Koreanisch selbst falsch ist (falsch gelesen), ordnen Sie die Fassungen trotzdem und kreuzen Sie „Das Koreanische scheint falsch“ an.",
     ],
     q: "Ziehen Sie die Fassungen in Ihre Reihenfolge, die beste links.",
-    how: "Ziehen Sie eine Fassung nach oben in die Reihe. Legen Sie sie zwischen zwei Fassungen, um sie dort einzureihen, oder auf eine Fassung, um beiden denselben Rang zu geben. Ziehen Sie sie zurück nach unten, um sie herauszunehmen. Tastatur: Fassung mit ihrem Buchstaben wählen, dann ihre Rangzahl drücken.",
+    how: "Lesen Sie alle Fassungen und ziehen Sie dann jede nach oben in die Reihe. Legen Sie sie auf eine Lücke (+) zwischen zwei Rängen, um sie dort einzureihen, auf „+ gleicher Rang“ für Gleichstand, oder auf den nächsten freien Platz. Ziehen Sie sie nach unten, um sie herauszunehmen.",
     lane: "Ihre Reihenfolge",
     best: "Beste",
     worst: "Schwächste",

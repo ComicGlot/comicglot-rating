@@ -39,6 +39,7 @@ const fr: Messages = {
     textsInAll: "{n} textes au total",
     time: "Durée",
     timeHint: "Estimation approximative ; faites des pauses quand vous voulez",
+    perSet: "par série d’environ {n} textes ; faites des pauses et arrêtez-vous quand vous voulez",
     share: "Votre part : {n} des {total} séries, environ {min} minutes. Merci d’en faire au moins autant. Si vous avez le temps, continuez : chaque série en plus aide, et vous pouvez vous arrêter à tout moment.",
     min: "min",
     saving: "Enregistrement",
@@ -228,6 +229,10 @@ const fr: Messages = {
   },
   // Ranking mode of the translations step.
   ranking: {
+    dropNowhere: "déposez sur un emplacement",
+    tied: "{n} ex æquo",
+    nextRank: "rang suivant",
+    sameRank: "même rang",
     label: "Traductions",
     short: "Classer",
     help: "Pour chaque texte, faites glisser les versions anglaises dans votre ordre, de la meilleure à gauche à la moins bonne à droite.",
@@ -240,7 +245,7 @@ const fr: Messages = {
       "Si le coréen affiché est lui-même faux (mal lu), classez quand même les versions et cochez « Le coréen semble faux ».",
     ],
     q: "Faites glisser les versions dans votre ordre, la meilleure à gauche.",
-    how: "Faites glisser une version vers la rangée. Déposez-la entre deux versions pour la placer là, ou sur une version pour leur donner le même rang. Ramenez-la en bas pour la retirer. Clavier : choisissez une version par sa lettre, puis tapez son rang.",
+    how: "Lisez toutes les versions, puis faites glisser chacune vers la rangée. Déposez-la sur un espace (+) entre deux rangs pour l’y placer, sur « + même rang » pour un ex æquo, ou sur le prochain emplacement libre. Ramenez-la en bas pour la retirer.",
     lane: "Votre ordre",
     best: "Meilleure",
     worst: "Moins bonne",

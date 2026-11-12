@@ -83,15 +83,16 @@ export type RankItem = { models: string[]; cards: Record<string, string[]>; deco
 export function rankFor(raterId: string, blockId: string, cands: Cand[], k: number): RankItem | null {
   const pool = rankPool(cands);
   const decoy = decoyOf(cands);
-  const want = Math.max(1, decoy ? k - 1 : k);
+  // Always k models, each with its two versions; a decoy is one more card on top, never in place of a model.
+  const want = Math.max(1, k);
   const order = shuffled([...pool.keys()].sort(), `${raterId}:${blockId}:models`);
   const pick = order.slice(0, want);
   const textsOf = (ms: string[]) => new Set(ms.flatMap((m) => [norm(pool.get(m)!.g.text ?? ""), norm(pool.get(m)!.p.text ?? "")]));
   // All the drawn versions say the same: swap the last model for the next one that says something else.
-  if (!decoy && textsOf(pick).size < 2) {
+  if (textsOf(pick).size < 2) {
     const other = order.slice(want).find((m) => textsOf([...pick.slice(0, -1), m]).size >= 2);
-    if (!other) return null;
-    pick[pick.length - 1] = other;
+    if (other) pick[pick.length - 1] = other;
+    else if (!decoy) return null; // every model says the same: nothing to rank
   }
   if (!pick.length) return null;
   const groups = new Map<string, string[]>();

@@ -360,7 +360,7 @@ export default function Workbench(p: Props) {
           )}
         </div>
         <div className="vscroll" ref={frameScroll}>
-          <div className={`frame${focusMode && p.step !== "review" ? " dim" : ""}`} style={{ width: `${zoom * 100}%`, maxWidth: zoom === 1 ? Math.max(p.width, 420) : undefined }}>
+          <div className={`frame${focusMode && p.step !== "review" ? " dim" : ""}`} style={{ width: `${zoom * 100}%`, maxWidth: zoom === 1 ? Math.max(Math.round(p.width * 1.5), 420) : undefined }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={`/api/page-image/${p.pageId}`} alt={m.work.theFrame} width={p.width} height={p.height} draggable={false} />
             {/* Only the texts of this task get a box; others on the page are not part of it. */}
@@ -496,7 +496,8 @@ export default function Workbench(p: Props) {
               {p.step === "compare" && cur.cards && (
                 <>
                   <QHead n={1} done={complete("compare", a)}>{m.ranking.q}</QHead>
-                  <RankBoard cards={cur.cards} groups={a.groups ?? []} onChange={(g, move) => setGroups(cur, g, move)} scroller={() => taskScroll.current} />
+                  <p className="small muted rankhelp">{m.ranking.how}</p>
+                  <RankBoard cards={cur.cards} groups={a.groups ?? []} onChange={(g, move) => setGroups(cur, g, move)} />
                   <div className="extras">
                     <button type="button" className="btn ghost sm" onClick={() => undoRank(cur)} disabled={!(history.current[cur.id]?.length)}><Icon name="arrowL" size={14} /> {m.ranking.undo}</button>
                     <button type="button" className="btn ghost sm" onClick={() => setGroups(cur, [], "clear")} disabled={!(a.groups ?? []).length}>{m.ranking.clear}</button>

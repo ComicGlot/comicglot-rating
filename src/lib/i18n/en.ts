@@ -41,6 +41,7 @@ const en = {
     textsInAll: "{n} texts in all",
     time: "Time",
     timeHint: "A rough guess; take breaks whenever you like",
+    perSet: "per set of about {n} texts; take breaks and stop whenever you like",
     share: "Your share: {n} of the {total} sets, about {min} minutes. Please do at least that much. If you have time, carry on: every further set helps, and you can stop at any point.",
     min: "min",
     saving: "Saving",
@@ -230,6 +231,10 @@ const en = {
   },
   // Ranking mode of the translations step.
   ranking: {
+    dropNowhere: "drop on a slot",
+    tied: "{n} tied",
+    nextRank: "next rank",
+    sameRank: "same rank",
     label: "Translations",
     short: "Rank",
     help: "For each text, drag the English versions into your order, from best on the left to worst on the right.",
@@ -242,7 +247,7 @@ const en = {
       "If the Korean shown is itself wrong (misread), still rank the versions, and tick “The Korean looks wrong”.",
     ],
     q: "Drag the versions into your order, best on the left.",
-    how: "Drag a version up into the row. Drop it between two versions to place it there, or onto a version to give both the same rank. Drag it back down to take it out. Keyboard: pick a version with its letter, then press its rank number.",
+    how: "Read every version, then drag each one up into the row. Drop it on a gap (+) between ranks to put it there, on “+ same rank” to tie it, or on the next free slot. Drag it back down to take it out.",
     lane: "Your order",
     best: "Best",
     worst: "Worst",
