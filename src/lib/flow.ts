@@ -144,8 +144,29 @@ export async function loadPlan(raterId: string, forAdmin = false) {
   const done = new Set(
     (await db.pageDone.findMany({ where: { raterId }, select: { pageId: true, step: true } })).map((d) => `${d.pageId}:${d.step}`),
   );
+  // In a study with a share per rater, every rater has every set, and the sets others have done least come first:
+  // a set this rater has started stays first, then the sets by how many pages other raters (testers not counted)
+  // have saved in them, ties in a per-rater random order. Raters who stop after their share still cover the study.
+  const shared = assignments.filter((a) => a.chapter.study.setsPerRater && !a.chapter.practice).map((a) => a.chapter.id);
+  const rank = new Map<string, number>();
+  if (shared.length) {
+    const others = await db.pageDone.findMany({
+      where: { raterId: { not: raterId }, rater: { role: { not: "tester" } }, page: { chapterId: { in: shared } } },
+      select: { page: { select: { chapterId: true } } },
+    });
+    const cover = new Map<string, number>();
+    for (const o of others) cover.set(o.page.chapterId, (cover.get(o.page.chapterId) ?? 0) + 1);
+    const pagesOf = (id: string) => assignments.find((a) => a.chapter.id === id)!.chapter.pages;
+    const state = (id: string) => {
+      const ps = pagesOf(id), n = ps.filter((p) => [...done].some((d) => d.startsWith(`${p.id}:`))).length;
+      return n === 0 ? 1 : n < ps.length ? 0 : 2; // started 0, untouched 1, finished 2
+    };
+    const tie = shuffled(shared, `${raterId}:order`);
+    const order = [...shared].sort((x, y) => state(x) - state(y) || (cover.get(x) ?? 0) / Math.max(1, pagesOf(x).length) - (cover.get(y) ?? 0) / Math.max(1, pagesOf(y).length) || tie.indexOf(x) - tie.indexOf(y));
+    order.forEach((id, i) => rank.set(id, i));
+  }
   // Practice sets come first, whatever their position.
-  assignments.sort((a, b) => Number(b.chapter.practice) - Number(a.chapter.practice) || a.position - b.position);
+  assignments.sort((a, b) => Number(b.chapter.practice) - Number(a.chapter.practice) || (rank.get(a.chapter.id) ?? 0) - (rank.get(b.chapter.id) ?? 0) || a.position - b.position);
   return assignments.map((a) => {
     const steps = effectiveSteps(a.chapter.study.steps, rater.steps);
     const pages: PageInfo[] = a.chapter.pages;

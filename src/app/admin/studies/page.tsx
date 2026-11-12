@@ -63,8 +63,8 @@ export default async function Studies() {
                     <input type="number" name="rankModels" min={2} max={4} defaultValue={st.rankModels ?? ""} placeholder="pairs" />
                   </label>
                   <label className="field">
-                    <span>Sets per rater (blank: all)</span>
-                    <input type="number" name="setsPerRater" min={1} defaultValue={st.setsPerRater ?? ""} placeholder="all" />
+                    <span>Each rater&apos;s share in sets (everyone gets all sets; least-covered first)</span>
+                    <input type="number" name="setsPerRater" min={1} defaultValue={st.setsPerRater ?? ""} placeholder="none" />
                   </label>
                 </div>
                 <label className="field">

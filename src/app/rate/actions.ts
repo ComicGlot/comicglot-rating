@@ -70,7 +70,7 @@ export async function saveTask(input: { pageId: string; step: string; payload: s
         if (!validRanking(a.groups, Object.keys(item.cards))) return { error: "rankAll", n: b.order + 1 };
         rows.push({
           blockId: b.id,
-          data: { ranking: { ...item, groups: a.groups }, comment: str(a.comment, 500) || undefined, sourceWrong: a.sourceWrong === true || undefined, ms: msOf(b.id, a) },
+          data: { ranking: { ...item, groups: a.groups }, moves: Math.max(0, Math.min(Number(a.moves) || 0, 10000)) || undefined, first: Array.isArray(a.first) ? (a.first as unknown[]).filter((l) => typeof l === "string" && l in item.cards) : undefined, comment: str(a.comment, 500) || undefined, sourceWrong: a.sourceWrong === true || undefined, ms: msOf(b.id, a) },
         });
       } else if (step === "compare") {
         const sets = setsFor(s.sub, b.id, b.candidates);

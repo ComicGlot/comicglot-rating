@@ -29,7 +29,11 @@ export default async function Welcome({ searchParams }: { searchParams: Promise<
   const blocks = await db.block.count({ where: { page: { chapter: { id: { in: plan.map((c) => c.chapter.id) }, practice: false } } } });
   const frames = plan.filter((c) => !c.chapter.practice).reduce((n, c) => n + c.pages.length, 0);
   const ranking = !!study?.rankModels;
-  const minutes = Math.round(blocks * steps.reduce((x, st) => x + (st === "compare" && ranking ? RANK_MINUTES : MINUTES[st]), 0) + frames * 0.05);
+  const sets = plan.filter((c) => !c.chapter.practice).length;
+  // With a share per rater, the time shown is for the share; the rater may go on through every set.
+  const share = study?.setsPerRater && sets ? Math.min(study.setsPerRater, sets) : 0;
+  const part = share ? share / sets : 1;
+  const minutes = Math.round(part * (blocks * steps.reduce((x, st) => x + (st === "compare" && ranking ? RANK_MINUTES : MINUTES[st]), 0) + frames * 0.05));
   // A study's own introduction (written by the admin) replaces the default text.
   const intro = study?.intro ? study.intro.split(/\n\s*\n/) : m.welcome.intro;
   const hasPractice = plan.some((c) => c.chapter.practice);
@@ -42,6 +46,7 @@ export default async function Welcome({ searchParams }: { searchParams: Promise<
         <h1 className="display" style={{ margin: "8px 0 16px" }}>{fmt(m.welcome.hello, { name: s.username })}</h1>
         {intro.map((p, i) => <p key={i} className="read" style={{ fontSize: 16, lineHeight: "26px" }}>{p}</p>)}
         {steps.includes("compare") && <div className="callout info" style={{ marginTop: 8 }}>{m.welcome.englishNote}</div>}
+        {share > 0 && <div className="callout" style={{ marginTop: 8 }}>{fmt(m.welcome.share, { n: share, total: sets, min: Math.max(5, Math.round(minutes / 5) * 5) })}</div>}
 
         <div className="section">
           <span className="label">{m.welcome.whatYouDo}</span>

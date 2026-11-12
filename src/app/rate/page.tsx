@@ -36,6 +36,9 @@ export default async function RateHome() {
   const spent = await db.pageDone.aggregate({ where: { raterId: s.sub }, _sum: { msSpent: true } });
   const minutes = Math.round((spent._sum.msSpent ?? 0) / 60000);
   const framesDone = plan.reduce((n, c) => n + c.pages.filter((p) => { const t = c.todo.filter((x) => x.pageId === p.id); return t.length && t.every((x) => x.done); }).length, 0);
+  // A study with a share per rater: how many of the rater's share of sets are finished.
+  const share = plan.find((c) => c.chapter.study.setsPerRater)?.chapter.study.setsPerRater ?? 0;
+  const setsDone = plan.filter((c) => !c.chapter.practice && c.chapter.study.setsPerRater && c.todo.length && c.todo.every((t) => t.done)).length;
   const framesAll = plan.reduce((n, c) => n + c.pages.filter((p) => c.todo.some((x) => x.pageId === p.id)).length, 0);
 
   return (
@@ -94,6 +97,7 @@ export default async function RateHome() {
                 <div className="small muted" style={{ borderTop: "1px solid var(--hairline)", paddingTop: 12 }}>
                   {fmt(m.home.tasks, { done, total })} · {plural(locale, m.home.sets, plan.length)}
                 </div>
+                {share > 0 && <div className="callout info">{fmt(m.home.share, { done: setsDone, n: share })}</div>}
               </div>
             </section>
 

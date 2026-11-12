@@ -82,7 +82,7 @@ def main() -> None:
     ap.add_argument("--tag-model", action="store_true", help="store conditions as <condition>@<model> (several models per block)")
     ap.add_argument("--rank-models", type=int, default=0, help="ranking mode: versions of this many models per text")
     ap.add_argument("--decoys", type=int, default=0, help="ranking mode: texts that get a decoy (attention check)")
-    ap.add_argument("--sets-per-rater", type=int, default=0, help="sets each rater gets (default: all)")
+    ap.add_argument("--sets-per-rater", type=int, default=0, help="each rater's share in sets (everyone gets all sets, the least-covered first)")
     ap.add_argument("--inactive", action="store_true", help="create the study closed")
     ap.add_argument("--intro", type=Path, help="text file shown on the welcome page")
     ap.add_argument("--max-width", type=int, default=900)
