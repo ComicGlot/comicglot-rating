@@ -4,7 +4,7 @@ import GuideDrawer from "@/components/GuideDrawer";
 import LiveProgress from "@/components/LiveProgress";
 import { requireRater } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { comparable, loadPlan, setsFor } from "@/lib/flow";
+import { comparable, loadPlan, rankFor, rankable, setsFor } from "@/lib/flow";
 import { getMessages } from "@/lib/i18n/server";
 import { chapterTitle } from "@/lib/i18n/titles";
 import { STEP_ORDER, type Step } from "@/lib/steps";
@@ -48,13 +48,22 @@ export default async function Work({ searchParams }: { searchParams: Promise<{ p
   ]);
   const byId = new Map(pages.map((p) => [p.id, p]));
   const askOwn = chapterPlan.chapter.study.askOwnTranslation;
+  const rankModels = chapterPlan.chapter.study.rankModels;
 
   const tasks: RunTask[] = run.map((t) => {
     const page = byId.get(t.pageId)!;
     const blocks: WBBlock[] = page.blocks.map((b) => {
       const r = Object.fromEntries(responses.filter((x) => x.blockId === b.id).map((x) => [x.step, x.data as Record<string, unknown>]));
-      const base: WBBlock = { id: b.id, order: b.order, box: [b.x0, b.y0, b.x1, b.y1], responses: r, cmp: comparable(b.candidates) };
-      if (t.step === "compare") {
+      const base: WBBlock = { id: b.id, order: b.order, box: [b.x0, b.y0, b.x1, b.y1], responses: r, cmp: rankModels ? rankable(b.candidates) : comparable(b.candidates) };
+      if (t.step === "compare" && rankModels) {
+        // Ranking mode: the cards of this rater, as letters and texts only.
+        const text = new Map(b.candidates.map((c) => [c.id, c.text]));
+        const item = rankFor(s.sub, b.id, b.candidates, rankModels);
+        if (item) {
+          base.source = b.sourceText;
+          base.cards = Object.entries(item.cards).map(([letter, ids]) => ({ letter, text: text.get(ids[0]) ?? "" }));
+        }
+      } else if (t.step === "compare") {
         // The client sees set numbers and letters only, never conditions or models.
         const text = new Map(b.candidates.map((c) => [c.id, c.text]));
         const sets = setsFor(s.sub, b.id, b.candidates);
@@ -68,7 +77,7 @@ export default async function Work({ searchParams }: { searchParams: Promise<{ p
     const pt = chapterPlan.todo.filter((x) => x.pageId === page.id);
     const typesDone = pageDone.find((d) => d.pageId === page.id && d.step === "types");
     return {
-      pageId: page.id, width: page.width, height: page.height, step: t.step, blocks, askOwn,
+      pageId: page.id, width: page.width, height: page.height, step: t.step, blocks, askOwn: askOwn && !rankModels, ranking: !!rankModels,
       missing: typesDone?.missing ?? false, pageNote: typesDone?.note ?? "",
       tabs: pt.map((x) => ({ step: x.step, done: x.done })), reviewSteps: pt.map((x) => x.step).filter((x) => x !== "review"),
       done: t.done, frame: chapterPlan.pages.findIndex((p) => p.id === page.id) + 1,
@@ -92,7 +101,7 @@ export default async function Work({ searchParams }: { searchParams: Promise<{ p
         home="/rate"
         user={s.username}
         crumbs={[{ label: m.work.yourFrames, href: "/rate" }, { label: chapterTitle(chapterPlan.chapter, m), strong: true }]}
-        right={<GuideDrawer steps={chapterPlan.steps} />}
+        right={<GuideDrawer steps={chapterPlan.steps} ranking={!!rankModels} />}
         lang
       >
         {chapterPlan.chapter.practice && <span className="pill violet">{m.work.practice}</span>}

@@ -511,6 +511,28 @@ details.more summary::-webkit-details-marker { display: none; }
 .opt.equal { width: 100%; min-height: 44px; display: flex; align-items: center; justify-content: center; gap: 8px; }
 .opt.equal .kbd { position: static; }
 @media (max-width: 1100px) { .versions { grid-template-columns: 1fr; } }
+
+/* Ranking: the cards stay in place; each shows its rank once placed, and the order so far reads as one line. */
+.rankline { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-height: 44px; padding: 6px 10px; border-radius: var(--r-lg);
+  border: 1px solid var(--hairline); background: var(--canvas); }
+.rankline .rg { display: inline-flex; align-items: center; gap: 4px; }
+.rankline .rg + .rg::before { content: "›"; color: var(--ink-faint); margin-right: 6px; }
+.rankline .rn { font-size: 11px; font-weight: 700; color: var(--ink-faint); }
+.rankline b { min-width: 24px; height: 24px; padding: 0 4px; border-radius: var(--r-xs); display: inline-grid; place-items: center; background: var(--accent); color: var(--on-accent); font-size: 13px; }
+.rankline .eq { margin: 0 3px; color: var(--accent-ink); font-weight: 700; }
+.rankgrid { align-items: stretch; }
+.rankcard { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.rankcard .version.pick { flex: 1; }
+.rankcard.ranked .version { border-color: var(--accent); background: var(--accent-tint); }
+.rankcard.ranked .version .ltr b { background: var(--accent); color: var(--on-accent); }
+.rankcard.top .version { box-shadow: inset 0 0 0 1px var(--accent); }
+.rankbadge { min-width: 34px; height: 34px; padding: 0 8px; border-radius: 999px; display: grid; place-items: center; background: var(--accent); color: var(--on-accent);
+  font-size: 18px; font-weight: 800; }
+.tiebtn { align-self: flex-start; min-height: 30px; padding: 2px 12px; border-radius: 999px; border: 1px dashed var(--hairline-strong); background: transparent;
+  color: var(--ink-muted); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
+.tiebtn:hover { border-color: var(--accent); color: var(--ink); }
+.tiebtn.ghost { visibility: hidden; }
+.tiebtn.on { border-style: solid; border-color: var(--accent); color: var(--accent-ink); background: var(--accent-tint); }
 @media (max-width: 560px) { .choice3 { grid-template-columns: 1fr; } .tonerow { grid-template-columns: 1fr; } }
 
 /* Moving through a set: big, labelled arrows; the next step shown right under the answer. */

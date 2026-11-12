@@ -107,6 +107,12 @@ export async function toggleStudy(form: FormData): Promise<void> {
   done();
 }
 
+// A positive whole number from a form field, or null when empty.
+const posInt = (v: FormDataEntryValue | null) => {
+  const n = Math.floor(Number(String(v ?? "").trim()));
+  return Number.isFinite(n) && n > 0 ? n : null;
+};
+
 export async function updateStudy(form: FormData): Promise<void> {
   await requireAdmin();
   await db.study.update({
@@ -115,6 +121,8 @@ export async function updateStudy(form: FormData): Promise<void> {
       steps: stepsFrom(form),
       askOwnTranslation: form.get("askOwn") === "on",
       ...(form.has("intro") ? { intro: String(form.get("intro") ?? "").trim() || null } : {}),
+      ...(form.has("rankModels") ? { rankModels: posInt(form.get("rankModels")) } : {}),
+      ...(form.has("setsPerRater") ? { setsPerRater: posInt(form.get("setsPerRater")) } : {}),
     },
   });
   done();

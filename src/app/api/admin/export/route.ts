@@ -15,9 +15,11 @@ const blockInclude = {
 
 // Practice sets never reach an export.
 const counted = { page: { chapter: { practice: false } } } as const;
-const kindOf = (username: string) => (username.startsWith("model:") ? "model" : "person");
+// person, model (a model judge) or tester (trying the study out; analyses keep only people)
+const kindOf = (r: { username: string; role: string }) => (r.username.startsWith("model:") ? "model" : r.role === "tester" ? "tester" : "person");
 
-// GET ?kind=types|transcribe|compare|pages  (admin only). One CSV per step, unblinded.
+// GET ?kind=types|transcribe|compare|ranking|pages  (admin only). One CSV per step, unblinded.
+// ranking: one row per version a rater ranked (long format, for a Plackett-Luce or Bradley-Terry fit).
 export async function GET(req: Request) {
   const s = await getSession();
   if (!s || s.role !== "admin") return new NextResponse("Forbidden", { status: 403 });
@@ -28,22 +30,56 @@ export async function GET(req: Request) {
     const rows = await db.pageDone.findMany({
       where: counted,
       orderBy: { createdAt: "asc" },
-      include: { rater: { select: { username: true } }, page: { select: { index: true, chapter: { select: { externalId: true, study: { select: { name: true } } } } } } },
+      include: { rater: { select: { username: true, role: true } }, page: { select: { index: true, chapter: { select: { externalId: true, study: { select: { name: true } } } } } } },
     });
     body = table(
       ["study", "chapter", "page", "rater", "rater_kind", "step", "text_without_box", "note", "ms_spent", "saved_at", "updated_at"],
-      rows.map((d) => [d.page.chapter.study.name, d.page.chapter.externalId, d.page.index, d.rater.username, kindOf(d.rater.username), d.step, d.missing, d.note, d.msSpent, d.createdAt.toISOString(), d.updatedAt.toISOString()]),
+      rows.map((d) => [d.page.chapter.study.name, d.page.chapter.externalId, d.page.index, d.rater.username, kindOf(d.rater), d.step, d.missing, d.note, d.msSpent, d.createdAt.toISOString(), d.updatedAt.toISOString()]),
+    );
+  } else if (kind === "ranking") {
+    const rows = await db.response.findMany({
+      where: { step: "compare", block: counted },
+      orderBy: [{ raterId: "asc" }, { createdAt: "asc" }],
+      include: { rater: { select: { username: true, role: true } }, block: { include: { ...blockInclude, candidates: true } } },
+    });
+    type Rk = { models: string[]; cards: Record<string, string[]>; groups: string[][]; decoy?: string };
+    const out: unknown[][] = [];
+    for (const r of rows) {
+      const d = r.data as { ranking?: Rk; comment?: string; sourceWrong?: boolean; ms?: number };
+      if (!d.ranking) continue;
+      const rk = d.ranking;
+      const cand = new Map(r.block.candidates.map((c) => [c.id, c]));
+      const rankOf: Record<string, number> = {};
+      let n = 1;
+      rk.groups.forEach((g) => { for (const l of g) rankOf[l] = n; n += g.length; });
+      const lastGroup = new Set(rk.groups[rk.groups.length - 1]);
+      const item = `${r.rater.username}|${r.block.externalId}`;
+      for (const [letter, ids] of Object.entries(rk.cards))
+        for (const cid of ids) {
+          const c = cand.get(cid);
+          out.push([
+            r.block.page.chapter.study.name, r.block.page.chapter.externalId, r.block.page.index, r.block.externalId, r.block.order,
+            r.rater.username, kindOf(r.rater), r.block.className, item, Object.keys(rk.cards).length, rk.models.join("|"),
+            letter, rankOf[letter], ids.length > 1, c?.model, c ? c.condition.split("@")[0] : "", letter === rk.decoy,
+            letter === rk.decoy ? lastGroup.has(letter) : "", c?.text, r.block.sourceText, !!d.sourceWrong, d.comment, d.ms, r.updatedAt.toISOString(),
+          ]);
+        }
+    }
+    body = table(
+      ["study", "chapter", "page", "block_uid", "order", "rater", "rater_kind", "detector_type", "item", "n_cards", "models",
+        "card", "rank", "card_shared", "model", "condition", "is_decoy", "decoy_last", "text", "source", "source_wrong", "comment", "ms", "saved_at"],
+      out,
     );
   } else if (kind === "types" || kind === "transcribe" || kind === "compare") {
     const rows = await db.response.findMany({
       where: { step: kind, block: counted },
       orderBy: [{ raterId: "asc" }, { createdAt: "asc" }],
       include: {
-        rater: { select: { username: true } },
+        rater: { select: { username: true, role: true } },
         block: { include: { ...blockInclude, ...(kind === "compare" ? { candidates: true } : {}) } },
       },
     });
-    const id = (r: (typeof rows)[number]) => [r.block.page.chapter.study.name, r.block.page.chapter.externalId, r.block.page.index, r.block.externalId, r.block.order, r.rater.username, kindOf(r.rater.username)];
+    const id = (r: (typeof rows)[number]) => [r.block.page.chapter.study.name, r.block.page.chapter.externalId, r.block.page.index, r.block.externalId, r.block.order, r.rater.username, kindOf(r.rater)];
     const idHead = ["study", "chapter", "page", "block_uid", "order", "rater", "rater_kind"];
     if (kind === "types") {
       body = table([...idHead, "detector_type", "rater_type", "agree", "note", "ms"], rows.map((r) => {
@@ -86,7 +122,7 @@ export async function GET(req: Request) {
       );
     }
   } else {
-    return new NextResponse("kind must be types, transcribe, compare or pages", { status: 400 });
+    return new NextResponse("kind must be types, transcribe, compare, ranking or pages", { status: 400 });
   }
   const stamp = new Date().toISOString().slice(0, 10);
   return new NextResponse("﻿" + body, {

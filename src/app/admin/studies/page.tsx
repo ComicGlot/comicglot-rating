@@ -48,7 +48,7 @@ export default async function Studies() {
               </div>
             </div>
             <div className="small muted" style={{ marginTop: 6 }}>
-              {st.chapters.length} sets · {st.chapters.reduce((n, c) => n + c._count.pages, 0)} frames · {info[i].blocks} texts · {st.chapters.filter((c) => c.practice).length} practice
+              {st.chapters.length} sets · {st.chapters.reduce((n, c) => n + c._count.pages, 0)} frames · {info[i].blocks} texts · {st.chapters.filter((c) => c.practice).length} practice{st.rankModels ? ` · ranking ${st.rankModels} models` : ""}{st.setsPerRater ? ` · ${st.setsPerRater} sets per rater` : ""}
             </div>
 
             <div className="grid2" style={{ marginTop: 20, alignItems: "start" }}>
@@ -57,6 +57,16 @@ export default async function Studies() {
                 <input type="hidden" name="steps" value="review" />
                 <div className="field"><span>Steps on every frame</span><StepBoxes checked={st.steps} /></div>
                 <label className="check"><input type="checkbox" name="askOwn" defaultChecked={st.askOwnTranslation} /> Ask translators for their own English first</label>
+                <div className="grid2" style={{ gap: 12 }}>
+                  <label className="field">
+                    <span>Rank the versions of N models (blank: pairs)</span>
+                    <input type="number" name="rankModels" min={2} max={4} defaultValue={st.rankModels ?? ""} placeholder="pairs" />
+                  </label>
+                  <label className="field">
+                    <span>Sets per rater (blank: all)</span>
+                    <input type="number" name="setsPerRater" min={1} defaultValue={st.setsPerRater ?? ""} placeholder="all" />
+                  </label>
+                </div>
                 <label className="field">
                   <span>Introduction on the welcome page (blank: the default text)</span>
                   <textarea name="intro" defaultValue={st.intro ?? ""} rows={5} placeholder="Who runs the study, what it is for, payment, contact…" />

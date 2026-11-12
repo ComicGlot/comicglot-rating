@@ -115,15 +115,50 @@ export async function loadResults(studyId?: string) {
   // ----- translations: guide against no type, per model group -----
   const cmp = await db.response.findMany({
     where: { step: "compare", block: where, rater: { role: { not: "tester" } } },
-    select: { raterId: true, blockId: true, data: true, block: { select: { className: true, candidates: { select: { id: true, condition: true } } } } },
+    select: { raterId: true, blockId: true, data: true, block: { select: { className: true, candidates: { select: { id: true, condition: true, model: true } } } } },
   });
   type J = { rater: string; block: string; model: string; family: Family | null; choice: "guide" | "plain" | "tie" | "other"; toneGuide: string; tonePlain: string; sourceWrong: boolean };
   const judgements: J[] = [];
   let attentionN = 0, attentionPass = 0;
   const attentionFail = new Map<string, number>();
+  // Ranking mode: every version gets the rank of its card; the versions are scored against those of other models.
+  type V = { rater: string; block: string; model: string; cond: string; rank: number; family: Family | null };
+  const versions: V[] = [];
   for (const r of cmp) {
-    const d = r.data as { sets?: { model: string | null; letters: Record<string, string>; choice: string; tone: Record<string, string> }[]; sourceWrong?: boolean };
+    const d = r.data as {
+      sets?: { model: string | null; letters: Record<string, string>; choice: string; tone: Record<string, string> }[];
+      ranking?: { models: string[]; cards: Record<string, string[]>; groups: string[][]; decoy?: string };
+      sourceWrong?: boolean;
+    };
     const cond = new Map(r.block.candidates.map((c) => [c.id, baseCondition(c.condition)]));
+    if (d.ranking) {
+      const rk = d.ranking;
+      const rankOf: Record<string, number> = {};
+      rk.groups.forEach((g, i) => g.forEach((l) => (rankOf[l] = i)));
+      if (rk.decoy) {
+        attentionN++;
+        if (rankOf[rk.decoy] === rk.groups.length - 1) attentionPass++;
+        else attentionFail.set(r.raterId, (attentionFail.get(r.raterId) ?? 0) + 1);
+      }
+      const candRank = new Map<string, number>();
+      for (const [l, ids] of Object.entries(rk.cards)) if (l !== rk.decoy) for (const id of ids) candRank.set(id, rankOf[l]);
+      const modelOf = new Map(r.block.candidates.map((c) => [c.id, c.model ?? ""]));
+      const family = FAMILY_OF[r.block.className ?? ""] ?? null;
+      for (const [id, rank] of candRank) versions.push({ rater: r.raterId, block: r.blockId, model: modelOf.get(id) ?? "", cond: cond.get(id) ?? "?", rank, family });
+      // Within each model, its two versions make one guide-or-no-type judgement, as in the pair mode.
+      for (const model of rk.models) {
+        const ids = [...candRank.keys()].filter((id) => modelOf.get(id) === model);
+        const g = ids.find((id) => cond.get(id) === "true_class"), p = ids.find((id) => cond.get(id) === "no_class");
+        if (!g || !p) continue;
+        const rg = candRank.get(g)!, rp = candRank.get(p)!;
+        judgements.push({
+          rater: r.raterId, block: `${r.blockId}:${model}`, model, family,
+          choice: rg === rp ? "tie" : rg < rp ? "guide" : "plain",
+          toneGuide: "", tonePlain: "", sourceWrong: !!d.sourceWrong,
+        });
+      }
+      continue;
+    }
     for (const s of d.sets ?? []) {
       if (s.model === ATTENTION_MODEL) {
         attentionN++;
@@ -188,6 +223,36 @@ export async function loadResults(studyId?: string) {
     judge: nameOf.get(id) ?? id,
     rows: groups(judgements.filter((j) => j.rater === id)),
   }));
+
+  // Model ranking: each version against the versions of the other models in the same ranking (a tie counts half).
+  // Score = share of such comparisons won; also the score of the guided and the unguided version alone.
+  type Win = { w: number; n: number };
+  const acc = new Map<string, { all: Win; guide: Win; plain: Win; texts: Set<string> }>();
+  const condAcc = { guide: { w: 0, n: 0 }, plain: { w: 0, n: 0 } };
+  const byItem = new Map<string, V[]>();
+  for (const v of versions.filter((x) => !isModel(x.rater) && !tester.has(x.rater))) {
+    const k = `${v.rater}:${v.block}`;
+    byItem.set(k, [...(byItem.get(k) ?? []), v]);
+  }
+  for (const vs of byItem.values())
+    for (const a of vs)
+      for (const b of vs) {
+        if (a === b || a.model === b.model) continue;
+        const w = a.rank < b.rank ? 1 : a.rank === b.rank ? 0.5 : 0;
+        const e = acc.get(a.model) ?? { all: { w: 0, n: 0 }, guide: { w: 0, n: 0 }, plain: { w: 0, n: 0 }, texts: new Set<string>() };
+        e.all.w += w; e.all.n++;
+        e.texts.add(`${a.rater}:${a.block}`);
+        const c = a.cond === "true_class" ? "guide" : a.cond === "no_class" ? "plain" : null;
+        if (c) { e[c].w += w; e[c].n++; }
+        acc.set(a.model, e);
+        // Guided against unguided versions across models: the guide's effect without the model's.
+        if (a.cond === "true_class" && b.cond === "no_class") { condAcc.guide.w += w; condAcc.guide.n++; }
+      }
+  const share = (a: Win) => (a.n ? a.w / a.n : null);
+  const ranking = [...acc.entries()]
+    .map(([model, e]) => ({ model, items: e.texts.size, score: share(e.all), guide: share(e.guide), plain: share(e.plain), comparisons: e.all.n }))
+    .sort((x, y) => (y.score ?? 0) - (x.score ?? 0));
+  const rankingCross = { guideOverPlain: share(condAcc.guide), n: condAcc.guide.n };
 
   // ----- transcription: CER of every stored reading -----
   const tr = await db.response.findMany({
@@ -261,6 +326,8 @@ export async function loadResults(studyId?: string) {
     study: groups(human),
     perModel,
     judges,
+    ranking,
+    rankingCross,
     sourceWrong: human.filter((j) => j.sourceWrong).length,
     attention: { n: attentionN, pass: attentionPass, failBy: [...attentionFail.entries()].map(([id, n]) => ({ rater: nameOf.get(id) ?? id, n })) },
     cer: [...cer.entries()].map(([reading, m]) => ({ reading, groups: Object.fromEntries([...m.entries()].map(([k, a]) => [k, { cer: a.len ? a.err / a.len : null, n: a.n }])) as Record<string, { cer: number | null; n: number }> })),

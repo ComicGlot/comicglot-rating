@@ -9,7 +9,7 @@ import { useI18n } from "./I18n";
 // The rater's reference: what each step asks, the tone marks, the type names and the shortcuts.
 // Rendered at the end of <body>: the top bar uses backdrop-filter, which would otherwise become the
 // containing block of this fixed panel and squeeze it into the bar.
-export default function GuideDrawer({ steps }: { steps: Step[] }) {
+export default function GuideDrawer({ steps, ranking = false }: { steps: Step[]; ranking?: boolean }) {
   const { m } = useI18n();
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -40,9 +40,9 @@ export default function GuideDrawer({ steps }: { steps: Step[] }) {
         <div className="db">
           {shown.map((s) => (
             <section key={s} style={{ marginBottom: 28 }}>
-              <span className="label">{m.steps[s].label}</span>
-              <ul>{m.steps[s].guide.map((x) => <li key={x}>{x}</li>)}</ul>
-              {s === "compare" && (
+              <span className="label">{s === "compare" && ranking ? m.ranking.label : m.steps[s].label}</span>
+              <ul>{(s === "compare" && ranking ? m.ranking.guide : m.steps[s].guide).map((x) => <li key={x}>{x}</li>)}</ul>
+              {s === "compare" && !ranking && (
                 <>
                   <span className="label">{m.guide.toneTitle}</span>
                   <div className="typelist" style={{ margin: "8px 0 12px" }}>
@@ -53,7 +53,7 @@ export default function GuideDrawer({ steps }: { steps: Step[] }) {
                 </>
               )}
               <div className="row" style={{ gap: 10 }}>
-                {m.guide.shortcuts[s].map(([k, v]) => (
+                {(s === "compare" && ranking ? m.ranking.shortcuts : m.guide.shortcuts[s]).map(([k, v]) => (
                   <span key={k} className="small muted"><span className="kbd">{k}</span> {v}</span>
                 ))}
               </div>

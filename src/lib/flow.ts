@@ -1,15 +1,15 @@
 import { db } from "./db";
 import { LETTERS, shuffled } from "./shuffle";
-import { ATTENTION_MODEL, effectiveSteps, type Step } from "./steps";
+import { ATTENTION_MODEL, baseCondition, effectiveSteps, type Step } from "./steps";
 
 export type Task = { chapterId: string; pageId: string; step: Step } | null;
 
 type PageInfo = { id: string; index: number; blocks: { candidates: Cand[] }[] };
 
 // Does this step have anything to do on this page?
-function applicable(step: Step, p: PageInfo): boolean {
+function applicable(step: Step, p: PageInfo, rankModels: number | null): boolean {
   if (p.blocks.length === 0) return false;
-  if (step === "compare") return p.blocks.some((b) => comparable(b.candidates));
+  if (step === "compare") return p.blocks.some((b) => (rankModels ? rankable(b.candidates) : comparable(b.candidates)));
   return true;
 }
 
@@ -18,7 +18,7 @@ function applicable(step: Step, p: PageInfo): boolean {
 // A group whose versions are the same text is never shown: the only possible answer would be "equal",
 // and the share of such pairs (the guide changed nothing) is counted apart on the results page.
 // Attention checks are identical on purpose and are kept.
-export type Cand = { id: string; model: string | null; text?: string };
+export type Cand = { id: string; model: string | null; condition?: string; text?: string };
 export const sameText = (a: string, b: string) => a.replace(/\s+/g, " ").trim() === b.replace(/\s+/g, " ").trim();
 function groupsOf(cands: Cand[]): Map<string, string[]> {
   const g = new Map<string, Cand[]>();
@@ -46,6 +46,82 @@ export function setsFor(raterId: string, blockId: string, cands: Cand[]): { key:
   }));
 }
 
+// ---------- ranking mode ----------
+// For each text a rater ranks the versions of a few models, each with and without the guide, from best to worst.
+// The models are drawn per rater and text, so over many raters and texts every model meets every other.
+// Versions with the same text are one card (they get the same rank). An attention check adds a decoy: the
+// translation of another text, which belongs at the bottom.
+const norm = (t: string) => t.replace(/\s+/g, " ").trim();
+const GUIDE = "true_class", PLAIN = "no_class";
+
+// Models of a block with both versions, and each model's two candidates.
+function rankPool(cands: Cand[]) {
+  const by = new Map<string, { g?: Cand; p?: Cand }>();
+  for (const c of cands) {
+    if (c.model === ATTENTION_MODEL || !c.condition) continue;
+    const base = baseCondition(c.condition);
+    if (base !== GUIDE && base !== PLAIN) continue;
+    const e = by.get(c.model ?? "") ?? {};
+    if (base === GUIDE) e.g = c;
+    else e.p = c;
+    by.set(c.model ?? "", e);
+  }
+  const full = new Map([...by].filter(([, e]) => e.g && e.p) as [string, { g: Cand; p: Cand }][]);
+  return full;
+}
+const decoyOf = (cands: Cand[]) => cands.find((c) => c.model === ATTENTION_MODEL && c.text);
+
+// Can this block be ranked: two or more different texts among the versions (or a decoy)?
+export function rankable(cands: Cand[]): boolean {
+  const texts = new Set([...rankPool(cands).values()].flatMap((e) => [norm(e.g.text ?? ""), norm(e.p.text ?? "")]));
+  return texts.size >= 2 || (texts.size >= 1 && !!decoyOf(cands));
+}
+
+export type RankItem = { models: string[]; cards: Record<string, string[]>; decoy?: string };
+
+// The cards one rater ranks for one block. Deterministic, so the server rebuilds them when the answer comes back.
+export function rankFor(raterId: string, blockId: string, cands: Cand[], k: number): RankItem | null {
+  const pool = rankPool(cands);
+  const decoy = decoyOf(cands);
+  const want = Math.max(1, decoy ? k - 1 : k);
+  const order = shuffled([...pool.keys()].sort(), `${raterId}:${blockId}:models`);
+  const pick = order.slice(0, want);
+  const textsOf = (ms: string[]) => new Set(ms.flatMap((m) => [norm(pool.get(m)!.g.text ?? ""), norm(pool.get(m)!.p.text ?? "")]));
+  // All the drawn versions say the same: swap the last model for the next one that says something else.
+  if (!decoy && textsOf(pick).size < 2) {
+    const other = order.slice(want).find((m) => textsOf([...pick.slice(0, -1), m]).size >= 2);
+    if (!other) return null;
+    pick[pick.length - 1] = other;
+  }
+  if (!pick.length) return null;
+  const groups = new Map<string, string[]>();
+  for (const m of pick)
+    for (const c of [pool.get(m)!.g, pool.get(m)!.p]) {
+      const t = norm(c.text ?? "");
+      groups.set(t, [...(groups.get(t) ?? []), c.id]);
+    }
+  let decoyKey: string | undefined;
+  if (decoy) {
+    const t = norm(decoy.text ?? "");
+    if (!groups.has(t)) { groups.set(t, [decoy.id]); decoyKey = t; }
+  }
+  const keys = shuffled([...groups.keys()].sort(), `${raterId}:${blockId}:cards`);
+  const cards: Record<string, string[]> = {};
+  let decoyLetter: string | undefined;
+  keys.forEach((t, i) => {
+    cards[LETTERS[i]] = groups.get(t)!.sort();
+    if (t === decoyKey) decoyLetter = LETTERS[i];
+  });
+  return { models: pick.slice().sort(), cards, ...(decoyLetter ? { decoy: decoyLetter } : {}) };
+}
+
+// Is a ranking (groups of letters, best first; letters in one group are tied) a full order of the cards?
+export function validRanking(groups: unknown, letters: string[]): groups is string[][] {
+  if (!Array.isArray(groups) || !groups.every((g) => Array.isArray(g) && g.length > 0 && g.every((l) => typeof l === "string"))) return false;
+  const flat = (groups as string[][]).flat();
+  return flat.length === letters.length && new Set(flat).size === flat.length && letters.every((l) => flat.includes(l));
+}
+
 // Chapters of a rater with the page-by-step tasks in order. A blocked rater has none, except for the admin view.
 export async function loadPlan(raterId: string, forAdmin = false) {
   const rater = await db.rater.findUnique({ where: { id: raterId } });
@@ -59,7 +135,7 @@ export async function loadPlan(raterId: string, forAdmin = false) {
           study: true,
           pages: {
             orderBy: { index: "asc" },
-            select: { id: true, index: true, blocks: { select: { candidates: { select: { id: true, model: true, text: true } } } } },
+            select: { id: true, index: true, blocks: { select: { candidates: { select: { id: true, model: true, condition: true, text: true } } } } },
           },
         },
       },
@@ -73,7 +149,7 @@ export async function loadPlan(raterId: string, forAdmin = false) {
   return assignments.map((a) => {
     const steps = effectiveSteps(a.chapter.study.steps, rater.steps);
     const pages: PageInfo[] = a.chapter.pages;
-    const todo = pages.flatMap((p) => steps.filter((s) => applicable(s, p)).map((s) => ({ pageId: p.id, step: s, done: done.has(`${p.id}:${s}`) })));
+    const todo = pages.flatMap((p) => steps.filter((s) => applicable(s, p, a.chapter.study.rankModels)).map((s) => ({ pageId: p.id, step: s, done: done.has(`${p.id}:${s}`) })));
     return { chapter: a.chapter, steps, pages, todo };
   });
 }

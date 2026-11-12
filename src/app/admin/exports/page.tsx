@@ -12,6 +12,12 @@ const EXPORTS = [
     feeds: "the translation study table and the last column of the per-model table (pairwise analysis in eval/translation_study).",
   },
   {
+    kind: "ranking",
+    title: "Translation rankings",
+    what: "Ranking mode: one row per version a rater ranked, with its card, rank (1 is best; ties share a rank), model and condition (true_class = guide, no_class = no type); decoys are the attention checks.",
+    feeds: "the model ranking and the guide against no type per model (Plackett-Luce fit in eval/translation_study/rank_analysis.py).",
+  },
+  {
     kind: "transcribe",
     title: "Transcriptions",
     what: "The rater's Korean as gt_text (#ILLEGIBLE when unreadable) next to every stored reading (reading:<system>).",
@@ -44,12 +50,12 @@ export default async function Exports() {
         <div>
           <span className="label">Manage</span>
           <h1 className="h1" style={{ marginTop: 4 }}>Exports</h1>
-          <p className="muted" style={{ maxWidth: 640 }}>CSV files in UTF-8, unblinded, practice sets left out. Rows from model judges carry <span className="mono">rater_kind = model</span>.</p>
+          <p className="muted" style={{ maxWidth: 640 }}>CSV files in UTF-8, unblinded, practice sets left out. Rows from model judges carry <span className="mono">rater_kind = model</span>, rows from testers <span className="mono">rater_kind = tester</span>.</p>
         </div>
       </div>
       <div className="grid2">
         {EXPORTS.map((e) => {
-          const n = e.kind === "pages" ? pages : counts[e.kind];
+          const n = e.kind === "pages" ? pages : e.kind === "ranking" ? counts.compare : counts[e.kind];
           return (
             <div key={e.kind} className="card stack" style={{ gap: 10 }}>
               <div className="row between">

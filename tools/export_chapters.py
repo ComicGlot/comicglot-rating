@@ -20,6 +20,12 @@ type first, until every type has at least N blocks, then shuffled across series 
 of --set-size frames, which the app shows like chapters. Pass only runs of chapters the detector was
 not trained on. Without --per-type, every run becomes one chapter.
 
+Ranking mode (--rank-models K): pass the calls of several models and --tag-model, so each version is stored as
+"<condition>@<model>"; raters then rank the versions of K models per text, both conditions each, drawn per rater
+and text. --decoys N gives N texts an attention check: the translation of another, longer text of a different
+kind, which belongs at the bottom. --sets-per-rater gives each rater only that many sets, the least-covered first.
+--inactive imports the study closed, to be opened in the admin once the app that knows it is deployed.
+
 It writes <out>/chapters.json and <out>/images/<run>/<frame>.jpg. The images stay outside the JSON so
 the file can be read and checked; `npm run import -- <out>/chapters.json` loads both.
 
@@ -40,6 +46,9 @@ from collections import Counter, defaultdict
 from pathlib import Path
 
 from PIL import Image
+
+
+BOXES = {"sqare_bubble", "standalone_text", "background_text", "title_panel", "system_bubble"}
 
 
 def local_path(src: str, root: Path) -> Path:
@@ -70,6 +79,11 @@ def main() -> None:
     ap.add_argument("--sample", type=Path, help="sample.json of eval/sample_frames.py: export exactly these frames")
     ap.add_argument("--practice", type=int, default=0, help="frames for a practice set (taken from the sample)")
     ap.add_argument("--attention", type=int, default=0, help="blocks that get an attention check")
+    ap.add_argument("--tag-model", action="store_true", help="store conditions as <condition>@<model> (several models per block)")
+    ap.add_argument("--rank-models", type=int, default=0, help="ranking mode: versions of this many models per text")
+    ap.add_argument("--decoys", type=int, default=0, help="ranking mode: texts that get a decoy (attention check)")
+    ap.add_argument("--sets-per-rater", type=int, default=0, help="sets each rater gets (default: all)")
+    ap.add_argument("--inactive", action="store_true", help="create the study closed")
     ap.add_argument("--intro", type=Path, help="text file shown on the welcome page")
     ap.add_argument("--max-width", type=int, default=900)
     ap.add_argument("--quality", type=int, default=85)
@@ -86,7 +100,8 @@ def main() -> None:
             c = json.loads(line)
             if c.get("condition") not in a.conditions or not c.get("translation"):
                 continue
-            cands[c["block_uid"]].append({"condition": c["condition"], "model": c.get("model"), "text": c["translation"]})
+            cond = f'{c["condition"]}@{c.get("model")}' if a.tag_model else c["condition"]
+            cands[c["block_uid"]].append({"condition": cond, "model": c.get("model"), "text": c["translation"]})
             source_of.setdefault(c["block_uid"], c.get("source_text") or "")
 
     extra: dict[str, dict[str, str]] = defaultdict(dict)
@@ -193,8 +208,36 @@ def main() -> None:
                                 {"condition": "check_b", "model": "attention", "text": text}]
         print(f"attention checks on {min(a.attention, len(pool))} blocks")
 
+    if a.decoys:
+        # A decoy is a translation of another text: longer, of another kind and from another frame, so it cannot fit.
+        rng = random.Random(a.seed + 2)
+        fam = lambda c: "sfx" if c == "sfx_sound" else "box" if c in BOXES else "balloon"
+        items = [(f'{c["id"]}/{p["index"]}', b) for c in chapters if not c["practice"] for p in c["pages"] for b in p["blocks"] if b["candidates"]]
+        # Titles are left out as donors: they can carry the series' credits.
+        donors = [(cid, b) for cid, b in items if len(b["source"]) >= 8 and b["class_name"] != "title_panel"]
+        n = 0
+        for cid, b in rng.sample(items, len(items)):
+            if n >= a.decoys:
+                break
+            own = {" ".join(x["text"].split()) for x in b["candidates"]}
+            pool = [d for dc, d in donors if dc != cid and fam(d["class_name"]) != fam(b["class_name"])]
+            rng.shuffle(pool)
+            for d in pool:
+                text = " ".join(rng.choice(d["candidates"])["text"].split())
+                if text not in own and len(text) > max(len(t) for t in own):
+                    b["candidates"].append({"condition": "decoy", "model": "attention", "text": text})
+                    n += 1
+                    break
+        print(f"decoys on {n} blocks")
+
     a.out.mkdir(parents=True, exist_ok=True)
     out = {"study": a.study, "steps": a.steps, "askOwnTranslation": not a.no_own, "guides": guides, "chapters": chapters}
+    if a.rank_models:
+        out["rankModels"] = a.rank_models
+    if a.sets_per_rater:
+        out["setsPerRater"] = a.sets_per_rater
+    if a.inactive:
+        out["active"] = False
     if a.intro:
         out["intro"] = a.intro.read_text(encoding="utf-8").strip()
     (a.out / "chapters.json").write_text(json.dumps(out, ensure_ascii=False, indent=1), encoding="utf-8")

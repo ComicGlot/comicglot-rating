@@ -1,11 +1,11 @@
 "use server";
 import { requireRater } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { canSeePage, loadPlan, setsFor } from "@/lib/flow";
+import { canSeePage, loadPlan, rankFor, setsFor, validRanking } from "@/lib/flow";
 import { STEP_ORDER, TONE, TYPES, effectiveSteps, type Step } from "@/lib/steps";
 
 // Errors are codes; the work screen shows them in the rater's language (messages.errors).
-export type SaveError = "notAssigned" | "unreadableForm" | "notYourStep" | "finishOther" | "chooseType" | "typeOrUnreadable" | "chooseVersion" | "chooseTone";
+export type SaveError = "notAssigned" | "unreadableForm" | "notYourStep" | "finishOther" | "chooseType" | "typeOrUnreadable" | "chooseVersion" | "chooseTone" | "rankAll";
 export type SaveResult = { error: SaveError; n?: number } | { ok: true };
 
 const TYPE_SET = new Set<string>(TYPES.map(([v]) => v));
@@ -34,7 +34,7 @@ export async function saveTask(input: { pageId: string; step: string; payload: s
   const [page, rater, prev] = await Promise.all([
     db.page.findUniqueOrThrow({
       where: { id: pageId },
-      include: { chapter: { select: { id: true, study: { select: { steps: true } } } }, blocks: { include: { candidates: { select: { id: true, model: true, text: true } } } } },
+      include: { chapter: { select: { id: true, study: { select: { steps: true, rankModels: true } } } }, blocks: { include: { candidates: { select: { id: true, model: true, condition: true, text: true } } } } },
     }),
     db.rater.findUnique({ where: { id: s.sub }, select: { steps: true } }),
     db.response.findMany({ where: { raterId: s.sub, step, block: { pageId } }, select: { blockId: true, data: true } }),
@@ -63,6 +63,15 @@ export async function saveTask(input: { pageId: string; step: string; payload: s
         const text = str(a.text, 1000);
         if (!unreadable && !text) return { error: "typeOrUnreadable", n: b.order + 1 };
         rows.push({ blockId: b.id, data: { text, ...(unreadable ? { unreadable } : {}), ms: msOf(b.id, a) } });
+      } else if (step === "compare" && page.chapter.study.rankModels) {
+        // Ranking mode: every card in a group, best first; cards in one group are tied.
+        const item = rankFor(s.sub, b.id, b.candidates, page.chapter.study.rankModels);
+        if (!item) continue;
+        if (!validRanking(a.groups, Object.keys(item.cards))) return { error: "rankAll", n: b.order + 1 };
+        rows.push({
+          blockId: b.id,
+          data: { ranking: { ...item, groups: a.groups }, comment: str(a.comment, 500) || undefined, sourceWrong: a.sourceWrong === true || undefined, ms: msOf(b.id, a) },
+        });
       } else if (step === "compare") {
         const sets = setsFor(s.sub, b.id, b.candidates);
         if (!sets.length) continue;

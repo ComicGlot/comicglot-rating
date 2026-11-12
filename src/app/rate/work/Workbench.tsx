@@ -14,6 +14,8 @@ export type WBBlock = {
   source?: string;
   // compare step only: comparison sets, each a list of lettered candidates
   sets?: { letter: string; text: string }[][];
+  // compare step, ranking mode: the versions to put in order, best first
+  cards?: { letter: string; text: string }[];
   // has something to compare (for the review table)
   cmp?: boolean;
 };
@@ -25,6 +27,8 @@ export type WBTask = {
   step: Step;
   blocks: WBBlock[];
   askOwn: boolean;
+  // compare step ranks several versions instead of choosing between two
+  ranking?: boolean;
   missing: boolean;
   pageNote: string;
   tabs: { step: Step; done: boolean }[];
@@ -49,10 +53,18 @@ type Answer = {
   comment?: string;
   sourceWrong?: boolean;
   sets?: SetAnswer[];
+  // ranking mode: groups of letters, best first (letters in one group are tied), and the number of cards
+  groups?: string[][];
+  need?: number;
 };
 
 function initial(step: Step, b: WBBlock): Answer {
-  const r = (b.responses[step] ?? {}) as Answer & { sets?: (SetAnswer & { letters?: unknown })[] };
+  const r = (b.responses[step] ?? {}) as Answer & { sets?: (SetAnswer & { letters?: unknown })[]; ranking?: { groups?: string[][] } };
+  if (step === "compare" && b.cards) {
+    // A saved ranking comes back as stored; a draft or an answer of this visit has the groups at the top level.
+    const groups = r.groups ?? r.ranking?.groups ?? [];
+    return { comment: r.comment ?? "", sourceWrong: !!r.sourceWrong, groups, need: b.cards.length };
+  }
   if (step === "compare") {
     // Nothing is preselected: the choice and the tone of every version are answers the rater gives.
     const sets = (b.sets ?? []).map((opts, k) => ({
@@ -72,8 +84,20 @@ function complete(step: Step, a: Answer | undefined): boolean {
   if (!a) return false;
   if (step === "types") return !!a.type;
   if (step === "transcribe") return !!a.unreadable || !!a.text?.trim();
+  if (step === "compare" && a.groups) return !!a.need && a.groups.flat().length === a.need;
   if (step === "compare") return (a.sets ?? []).length > 0 && (a.sets ?? []).every(setDone);
   return true;
+}
+
+// Competition rank of each letter: 1, 2, 2, 4 for [[C], [A, B], [D]].
+function ranksOf(groups: string[][]): Record<string, number> {
+  const out: Record<string, number> = {};
+  let n = 1;
+  for (const g of groups) {
+    for (const l of g) out[l] = n;
+    n += g.length;
+  }
+  return out;
 }
 
 function Crop({ pageId, width, height, box, maxW = 360, maxH = 220 }: { pageId: string; width: number; height: number; box: WBBlock["box"]; maxW?: number; maxH?: number }) {
@@ -115,7 +139,7 @@ export default function Workbench(p: Props) {
   const textRef = useRef<HTMLTextAreaElement>(null);
   const saveRef = useRef<HTMLButtonElement>(null);
 
-  const shown = useMemo(() => p.blocks.filter((b) => p.step !== "compare" || b.sets?.length), [p.blocks, p.step]);
+  const shown = useMemo(() => p.blocks.filter((b) => p.step !== "compare" || b.sets?.length || b.cards?.length), [p.blocks, p.step]);
   // The review table lists a text only if one of the steps has something to do on it.
   const reviewBlocks = useMemo(() => p.blocks.filter((b) => p.reviewSteps.some((s) => s !== "compare" || b.cmp)), [p.blocks, p.reviewSteps]);
   const [answers, setAnswers] = useState<Record<string, Answer>>(() => Object.fromEntries(p.blocks.map((b) => [b.id, initial(p.step, b)])));
@@ -212,6 +236,44 @@ export default function Workbench(p: Props) {
     if (setDone(now) && !setDone(old) && rest) setTimeout(() => saveRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }), 60);
   }, [answers, setSet]);
 
+  // Ranking mode. Clicking a card puts it next in the order; clicking a ranked card takes it out. When one card is
+  // left it goes last by itself. "Same as" ties a card with the one ranked just above it, and unties it again.
+  const setGroups = useCallback((b: WBBlock, next: string[][]) => {
+    const was = complete("compare", answers[b.id]);
+    set(b.id, { groups: next });
+    const rest = shown.every((x) => x.id === b.id || complete("compare", answers[x.id]));
+    if (!was && next.flat().length === (b.cards?.length ?? 0) && rest) setTimeout(() => saveRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }), 60);
+  }, [answers, set, shown]);
+  const rankClick = useCallback((b: WBBlock, letter: string) => {
+    const groups = answers[b.id]?.groups ?? [];
+    if (groups.some((g) => g.includes(letter))) {
+      // The card that went last by itself stays put when clicked: the rater was most likely placing it.
+      const last = groups[groups.length - 1];
+      if (groups.flat().length === (b.cards?.length ?? 0) && last.length === 1 && last[0] === letter) return;
+      return setGroups(b, groups.map((g) => g.filter((l) => l !== letter)).filter((g) => g.length));
+    }
+    let next = [...groups, [letter]];
+    const left = (b.cards ?? []).filter((c) => !next.flat().includes(c.letter));
+    if (left.length === 1) next = [...next, [left[0].letter]];
+    setGroups(b, next);
+  }, [answers, setGroups]);
+  const toggleTie = useCallback((b: WBBlock, letter: string) => {
+    const groups = answers[b.id]?.groups ?? [];
+    const gi = groups.findIndex((g) => g.includes(letter));
+    if (gi < 0) return;
+    const g = groups[gi];
+    if (g.length === 1) {
+      if (gi === 0) return;
+      setGroups(b, [...groups.slice(0, gi - 1), [...groups[gi - 1], letter], ...groups.slice(gi + 1)]);
+    } else {
+      setGroups(b, [...groups.slice(0, gi), g.filter((l) => l !== letter), [letter], ...groups.slice(gi + 1)]);
+    }
+  }, [answers, setGroups]);
+  const undoRank = useCallback((b: WBBlock) => {
+    const flat = (answers[b.id]?.groups ?? []).flat();
+    if (flat.length) rankClick(b, flat[flat.length - 1]);
+  }, [answers, rankClick]);
+
   // Keep the active box in view in the frame.
   useEffect(() => {
     if (!active) return;
@@ -251,6 +313,14 @@ export default function Workbench(p: Props) {
         const t = TYPES[k === "0" ? 9 : Number(k) - 1];
         if (t) { set(cur.id, { type: t[0] }); setTimeout(goNextOpen, 180); }
       }
+      if (p.step === "compare" && cur.cards) {
+        const flat = (answers[cur.id]?.groups ?? []).flat();
+        if (e.key === "Backspace") { e.preventDefault(); return undoRank(cur); }
+        if (e.key === "=" && flat.length) return toggleTie(cur, flat[flat.length - 1]);
+        const c = cur.cards.find((o) => o.letter.toLowerCase() === k);
+        if (c) rankClick(cur, c.letter);
+        return;
+      }
       if (p.step === "compare" && revealed && cur.sets) {
         const a = answers[cur.id];
         const k0 = Math.max(0, (a.sets ?? []).findIndex((s) => !setDone(s)));
@@ -266,7 +336,7 @@ export default function Workbench(p: Props) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [p.step, cur, curDone, answers, todo, ready, revealed, go, goNextOpen, set, answer]);
+  }, [p.step, cur, curDone, answers, todo, ready, revealed, go, goNextOpen, set, answer, rankClick, toggleTie, undoRank]);
 
   const a = cur ? answers[cur.id] : undefined;
 
@@ -275,6 +345,10 @@ export default function Workbench(p: Props) {
     const d = data as Answer;
     if (step === "types") return <>{m.types[d.type as keyof typeof m.types]?.[0] ?? d.type}{d.note ? <span className="muted"> · {d.note}</span> : null}</>;
     if (step === "transcribe") return d.unreadable ? <span className="pill warn">{m.work.review.unreadable}</span> : <span className="korean">{d.text}</span>;
+    if (step === "compare" && (d.groups || (data as { ranking?: unknown }).ranking)) {
+      const g = d.groups ?? (data as { ranking: { groups: string[][] } }).ranking.groups;
+      return <>{g.map((x) => x.join(" = ")).join(" › ")}</>;
+    }
     if (step === "compare") {
       const c = (d.sets ?? []).map((s) => (s.choice === "tie" ? m.work.review.equal : s.choice)).join(", ");
       return (
@@ -440,7 +514,61 @@ export default function Workbench(p: Props) {
                 </div>
               )}
 
-              {p.step === "compare" && (
+              {p.step === "compare" && cur.cards && (() => {
+                const groups = a.groups ?? [];
+                const rank = ranksOf(groups);
+                const placed = groups.flat().length;
+                return (
+                  <>
+                    <QHead n={1} done={complete("compare", a)}>{m.ranking.q}</QHead>
+                    <p className="small muted" style={{ margin: "-4px 0 10px" }}>{m.ranking.how}</p>
+                    {/* The order so far, as one line; the cards below stay where they are. */}
+                    <div className="rankline" aria-live="polite">
+                      {placed === 0 ? <span className="faint">{m.ranking.none}</span> : groups.map((g, gi) => (
+                        <span key={gi} className="rg">
+                          <span className="rn num">{rank[g[0]]}</span>
+                          {g.map((l, li) => <span key={l}>{li > 0 && <span className="eq">=</span>}<b>{l}</b></span>)}
+                        </span>
+                      ))}
+                      <span style={{ flex: 1 }} />
+                      <button type="button" className="btn ghost sm" onClick={() => undoRank(cur)} disabled={!placed}><Icon name="arrowL" size={14} /> {m.ranking.undo}</button>
+                      <button type="button" className="btn ghost sm" onClick={() => setGroups(cur, [])} disabled={!placed}>{m.ranking.clear}</button>
+                    </div>
+                    <div className="versions rankgrid" role="list">
+                      {cur.cards.map((o) => {
+                        const gi = groups.findIndex((g) => g.includes(o.letter));
+                        const r = rank[o.letter];
+                        const tied = gi >= 0 && groups[gi].length > 1;
+                        return (
+                          <div key={o.letter} role="listitem" className={`rankcard${r ? " ranked" : ""}${r === 1 ? " top" : ""}`}>
+                            <button type="button" className="version pick" onClick={() => rankClick(cur, o.letter)} aria-pressed={!!r} title={r ? m.ranking.takeOut : m.ranking.putNext}>
+                              <div className="ltr">
+                                <b>{o.letter}</b>
+                                {r ? <span className="rankbadge num">{tied ? "=" : ""}{r}</span> : <span className="kbd">{o.letter}</span>}
+                              </div>
+                              <div className="text">{o.text}</div>
+                            </button>
+                            {/* The tie switch keeps its room when hidden, so the cards do not jump as the order grows. */}
+                            {gi > 0 || tied ? (
+                              <button type="button" className={`tiebtn${tied ? " on" : ""}`} onClick={() => toggleTie(cur, o.letter)} aria-pressed={tied}>
+                                {tied ? m.ranking.untie : fmt(m.ranking.sameAs, { n: rank[groups[gi - 1][0]] })}
+                              </button>
+                            ) : <span className="tiebtn ghost" aria-hidden="true" />}
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className="extras">
+                      <button type="button" className={`chip${a.sourceWrong ? " on" : ""}`} onClick={() => set(cur.id, { sourceWrong: !a.sourceWrong })} aria-pressed={!!a.sourceWrong}>
+                        <Icon name="flag" size={14} /> {m.work.koreanWrong}
+                      </button>
+                      <input type="text" className="grow" value={a.comment} onChange={(e) => set(cur.id, { comment: e.target.value })} placeholder={m.work.comment} style={{ minHeight: 28, padding: "4px 10px", fontSize: 13 }} />
+                    </div>
+                  </>
+                );
+              })()}
+
+              {p.step === "compare" && !cur.cards && (
                 <>
                   {/* Once the versions are shown an empty own translation is locked and only takes room. */}
                   {p.askOwn && (!revealed || !!a.own) && (
@@ -538,7 +666,15 @@ export default function Workbench(p: Props) {
                 </button>
               ) : null)}
 
-              {p.step === "compare" && revealed && (
+              {p.step === "compare" && cur.cards && (
+                <div className="hint" style={{ marginTop: 12 }}>
+                  <span><span className="kbd">A</span>…<span className="kbd">F</span>{m.ranking.keys.next}</span>
+                  <span><span className="kbd">=</span>{m.ranking.keys.tie}</span>
+                  <span><span className="kbd">⌫</span>{m.ranking.keys.undo}</span>
+                  <span><span className="kbd">↵</span>{m.work.keys.enter}</span>
+                </div>
+              )}
+              {p.step === "compare" && revealed && !cur.cards && (
                 <div className="hint" style={{ marginTop: 12 }}>
                   <span><span className="kbd">E</span>{m.work.keys.equal}</span>
                   <span><span className="kbd">A</span><span className="kbd">B</span>{m.work.keys.choose}</span>

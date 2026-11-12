@@ -4,6 +4,7 @@
 //
 // Format:
 //   { "study": "round1", "steps": ["types","transcribe","compare","review"], "askOwnTranslation": true, "intro": "...",
+//     "rankModels": 3, "setsPerRater": 5, "active": false,   (optional, used when the study is created)
 //     "guides": { "<type>": "<style guide>", "default": "..." },
 //     "chapters": [ { "id": "run12", "title": "Chapter 1", "practice": false, "pages": [
 //        { "index": 0, "image_file": "run12/000.jpg" | "image_b64": "...", "image_mime": "image/jpeg", "width": 800, "height": 1600,
@@ -24,6 +25,7 @@ type InBlock = {
 type InPage = { index: number; image_file?: string; image_b64?: string; image_mime?: string; width: number; height: number; blocks: InBlock[] };
 type InFile = {
   study: string; steps?: string[]; askOwnTranslation?: boolean; guides?: Record<string, string>; intro?: string;
+  rankModels?: number | null; setsPerRater?: number | null; active?: boolean;
   chapters: { id: string; title?: string; practice?: boolean; pages: InPage[] }[];
 };
 
@@ -38,7 +40,10 @@ async function main() {
   const steps = STEPS.filter((s) => (data.steps ?? STEPS).includes(s) || s === "review");
   const study = await db.study.upsert({
     where: { name: data.study },
-    create: { name: data.study, steps, askOwnTranslation: data.askOwnTranslation ?? true, guides: data.guides ?? Prisma.JsonNull, intro: data.intro ?? null },
+    create: {
+      name: data.study, steps, askOwnTranslation: data.askOwnTranslation ?? true, guides: data.guides ?? Prisma.JsonNull, intro: data.intro ?? null,
+      rankModels: data.rankModels ?? null, setsPerRater: data.setsPerRater ?? null, active: data.active ?? true,
+    },
     update: { ...(data.guides ? { guides: data.guides } : {}), ...(data.intro ? { intro: data.intro } : {}) },
   });
   let pos = (await db.chapter.aggregate({ where: { studyId: study.id }, _max: { position: true } }))._max.position ?? -1;

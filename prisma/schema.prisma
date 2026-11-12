@@ -39,6 +39,11 @@ model Study {
   askOwnTranslation Boolean   @default(true)
   guides            Json?     // type -> style guide text, from ComicGlot data/prompts/style_guides.json
   intro             String?   // shown on the welcome page before the first frame (plain text, blank lines split paragraphs)
+  // Ranking mode of the compare step: for each text, the versions of this many models (with and without the guide)
+  // are ranked from best to worst; the models differ per rater and text. Null: pairs within one model.
+  rankModels        Int?
+  // Each rater gets this many sets (besides practice), those with the fewest raters first. Null: every set.
+  setsPerRater      Int?
   createdAt         DateTime  @default(now())
   chapters          Chapter[]
   tokens            AccessToken[]
@@ -138,7 +143,8 @@ model ChapterAssignment {
 // What one rater entered for one block in one step.
 //   types:      { type: "<class>" | "not_text", note? }
 //   transcribe: { text, unreadable? }
-//   compare:    { letters: {A: candidateId, ...}, choice: "A" | "B" | "tie", tone: {A: "fine"|"added"|"overdone"}, own?, comment? }
+//   compare:    { sets: [{ model, letters: {A: candidateId, ...}, choice: "A" | "B" | "tie", tone: {A: "flat"|"fine"|"strong"} }], own?, comment? }
+//               ranking mode: { ranking: { models: [...], cards: {A: [candidateId, ...]}, groups: [["C"], ["A", "B"], ...], decoy?: "D" }, comment? }
 model Response {
   id        String   @id @default(cuid())
   raterId   String

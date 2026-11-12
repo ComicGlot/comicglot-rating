@@ -13,7 +13,9 @@ export const dynamic = "force-dynamic";
 export const metadata = { title: "Welcome" };
 
 // Minutes per text and step (a comparison with tones takes about 20 s), plus a little per frame to look at it.
+// Ranking four to six versions takes longer: about 45 s a text.
 const MINUTES: Record<Step, number> = { types: 0.2, transcribe: 0.6, compare: 0.35, review: 0.05 };
+const RANK_MINUTES = 0.75;
 
 export default async function Welcome({ searchParams }: { searchParams: Promise<{ missing?: string }> }) {
   const s = await requireRater();
@@ -26,7 +28,8 @@ export default async function Welcome({ searchParams }: { searchParams: Promise<
   const steps = [...new Set(plan.flatMap((c) => c.steps))] as Step[];
   const blocks = await db.block.count({ where: { page: { chapter: { id: { in: plan.map((c) => c.chapter.id) }, practice: false } } } });
   const frames = plan.filter((c) => !c.chapter.practice).reduce((n, c) => n + c.pages.length, 0);
-  const minutes = Math.round(blocks * steps.reduce((x, st) => x + MINUTES[st], 0) + frames * 0.05);
+  const ranking = !!study?.rankModels;
+  const minutes = Math.round(blocks * steps.reduce((x, st) => x + (st === "compare" && ranking ? RANK_MINUTES : MINUTES[st]), 0) + frames * 0.05);
   // A study's own introduction (written by the admin) replaces the default text.
   const intro = study?.intro ? study.intro.split(/\n\s*\n/) : m.welcome.intro;
   const hasPractice = plan.some((c) => c.chapter.practice);
@@ -47,12 +50,12 @@ export default async function Welcome({ searchParams }: { searchParams: Promise<
               <div key={x} className="card tight" style={{ display: "flex", gap: 14 }}>
                 <span className="qnum" style={{ background: "var(--accent)", color: "var(--on-accent)" }}>{i + 1}</span>
                 <div className="grow">
-                  <div className="h3">{m.steps[x].label}</div>
-                  <p className="read muted" style={{ margin: "4px 0 0" }}>{m.steps[x].help}</p>
+                  <div className="h3">{x === "compare" && ranking ? m.ranking.label : m.steps[x].label}</div>
+                  <p className="read muted" style={{ margin: "4px 0 0" }}>{x === "compare" && ranking ? m.ranking.help : m.steps[x].help}</p>
                   <details className="more" style={{ marginTop: 8 }}>
                     <summary className="small">{m.welcome.details}</summary>
                     <ul className="read" style={{ margin: "8px 0 0", paddingLeft: 18 }}>
-                      {m.steps[x].guide.map((g) => <li key={g}>{g}</li>)}
+                      {(x === "compare" && ranking ? m.ranking.guide : m.steps[x].guide).map((g) => <li key={g}>{g}</li>)}
                     </ul>
                   </details>
                 </div>

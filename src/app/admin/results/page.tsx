@@ -129,6 +129,35 @@ export default async function Results() {
         </section>
       )}
 
+      {R.ranking.length > 0 && (
+        <section className="section">
+          <span className="label">Ranking: models against each other</span>
+          <div className="card" style={{ padding: 0, overflow: "auto" }}>
+            <table className="t">
+              <thead><tr><th>Model</th><th className="r">Rankings</th><th className="r">Score</th><th className="r">With guide</th><th className="r">No type</th><th className="r">Comparisons</th></tr></thead>
+              <tbody>
+                {R.ranking.map((r) => (
+                  <tr key={r.model}>
+                    <td className="mono small">{r.model}</td>
+                    <td className="r num">{r.items}</td>
+                    <td className="r num"><b>{r.score == null ? "–" : pct(r.score, 1)}</b></td>
+                    <td className="r num">{r.guide == null ? "–" : pct(r.guide, 1)}</td>
+                    <td className="r num">{r.plain == null ? "–" : pct(r.plain, 1)}</td>
+                    <td className="r num">{r.comparisons}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="small muted" style={{ marginTop: 10, maxWidth: 820 }}>
+            Score: the share of comparisons a model&apos;s versions win against the versions of the other models ranked with them (a tie counts half; 50% is average).
+            The guide against no type within each model is in the tables above.
+            {R.rankingCross.n > 0 && <> Across models, a guided version is ranked above an unguided one in {pct(R.rankingCross.guideOverPlain ?? 0, 1)} of {R.rankingCross.n} comparisons.</>}
+            {" "}The paper&apos;s numbers come from the export (Plackett–Luce fit in eval/translation_study).
+          </p>
+        </section>
+      )}
+
       {R.judges.length > 0 && (
         <section className="section">
           <span className="label">Model judges (reported apart from people)</span>

@@ -40,7 +40,7 @@ export default async function RateHome() {
 
   return (
     <>
-      <TopNav home="/rate" user={s.username} crumbs={[m.home.title]} right={<GuideDrawer steps={steps} />} lang />
+      <TopNav home="/rate" user={s.username} crumbs={[m.home.title]} right={<GuideDrawer steps={steps} ranking={plan.some((c) => !!c.chapter.study.rankModels)} />} lang />
       <main className="wrap">
         {plan.length === 0 ? (
           <div className="empty">
